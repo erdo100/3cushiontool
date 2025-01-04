@@ -44,7 +44,7 @@ def is_point(shot: System) -> bool:
             break
     else:
         # Both object balls were not contacted by the cue ball. No point.
-        return True
+        return False
 
     # Both balls have been hit by the object ball. But were at least 3 cushions
     # contacted before the second object ball was first hit? If yes, point, otherwise
