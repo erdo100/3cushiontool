@@ -20,10 +20,10 @@ wpos = (0.5275, 0.71)  # White
 ypos = (0.71, 0.71)  # Yellow
 rpos = (0.71, 2.13)  # Red
 
-cutangle0 = 37
+cutangle0 = 35
 
 # shot props
-sidespin = 0.2
+sidespin = 0.4
 vertspin = 0.2
 cuespeed = 3.0
 
@@ -346,7 +346,8 @@ def eval_shot(shot: system):
 
         if is_point(system):
             # calculate hit_fraction
-            hit_fraction = eval_hit_fraction(shot, b1hit)
+            print('calculate hit_fraction of point')
+            # hit_fraction = eval_hit_fraction(shot, b1hit)
 
         elif b2hit != [] and b3hit == []:
             # one ball was hit
@@ -363,14 +364,23 @@ def eval_shot(shot: system):
             y = b1b3dist[tsel]
             t = t_b1[tsel]
 
+            plt.figure(figsize=(8, 5))
+            plt.plot(y)
+            plt.show()
+
             # find 3 different minima (if available) of b1b3dist[tsel]
             # Find local minima (relative minima) in the data
             minima_indices = argrelextrema(y, np.less)[0]
-            # If only 2 minima are found, check if the last value is smaller than both
-            if len(minima_indices) < 3:
-                if y[-1] < y[minima_indices[0]] or y[-1] < y[minima_indices[1]]:
-                    minima_indices = np.append(minima_indices, len(y)-1)
+            # check if the if distance was getting closer at the end, but not yet minimum
+            
+            if y[-2] >= y[-1]:
+                # Add the last index to the minima_indices if we have negative slope at the end
+                minima_indices = np.append(minima_indices, len(y)-1)
 
+            # Ensure the array has 3 elements
+            while len(minima_indices) < 3:
+                minima_indices = np.append(minima_indices, len(y)-1)
+ 
             # Sort the minima by their values (y values) and get the 3 smallest
             sorted_minima_indices = minima_indices[np.argsort(y[minima_indices])][:3]
             for idx in sorted_minima_indices:
