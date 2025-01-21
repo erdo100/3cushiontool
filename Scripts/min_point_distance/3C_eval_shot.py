@@ -7,7 +7,7 @@ from pooltool.events.filter import by_ball, by_time, by_type, filter_events, fil
 import matplotlib.pyplot as plt
 from scipy.signal import argrelextrema
 from scipy.interpolate import interp1d
-
+import time
 
 # from pooltool.physics.resolve.resolver import RESOLVER_CONFIG_PATH
 # print(RESOLVER_CONFIG_PATH)
@@ -20,12 +20,12 @@ wpos = (0.5275, 0.71)  # White
 ypos = (0.71, 0.71)  # Yellow
 rpos = (0.71, 2.13)  # Red
 
-cutangle0 = 35
+cutangle0 = 30
 
 # shot props
-sidespin = 0.27
+sidespin = 0.24
 vertspin = 0.2
-cuespeed = 2.5
+cuespeed = 3.2
 
 # define the properties
 u_slide = 0.15
@@ -91,14 +91,6 @@ system = system_template.copy()
 
 phi = pt.aim.at_ball(system, "red", cut=cutangle0)
 system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin)
-
-# Evolve the shot.
-pt.simulate(system, inplace=True)
-
-if is_point(system):
-    print("Point: YES")
-else:
-    print("Point: NO")
 
 
 
@@ -176,19 +168,25 @@ def eval_shot(shot: system):
         # identify the balls b1=cueball, b2=objectball, b3=targetball
 
         b1 = shot.cue.cue_ball_id
-        # Get ball-ball event
-        ball_ball = filter_type(shot.events, EventType.BALL_BALL)
-        if ball_ball == []:
+        
+        # identy b2 and b3.
+        # if b1 hits only one ball, b2 is the ball which is hit by b1, b3 is the remaining ball
+        # if b1 has no ball-ball event, b2 is the closest ball to b1 after 3 cushions, b3 is the remaining ball
+
+        # get ball events of cue ball b1
+        b1events = filter_ball(shot.events, b1)
+        b1ballhits = filter_type(b1events, EventType.BALL_BALL)
+
+        if b1ballhits != []:
+            # b2 is the first ball which is touched by b1
+            b2 = [color for color in b1ballhits[0].ids if color != b1][0]
+            # remaining ball is b3
+            b3 = [color for color in ("white", "yellow", "red") if color not in (b1, b2)][0]
+        else:
             # no ball contact, so we define b1 and b2
             # in future change it to the closest ball to the cueball after 3 cushions
             b2 = [color for color in ("white", "yellow") if color != b1][0]
             b3 = "red"
-        else:
-            # b2 is the first ball which is touched by b1
-            b2 = [color for color in ball_ball[0].ids if color != b1][0]
-            # remaining ball is b3
-            b3 = [color for color in ("white", "yellow", "red") if color not in (b1, b2)][0]
-        
         
         return [b1, b2, b3]
     
@@ -204,6 +202,7 @@ def eval_shot(shot: system):
         return [b1hit, b2hit, b3hit]
 
     def add_events_to_coords(shot):
+        # Add events to the vectorized time series to have accurate positions for each event
 
         shotcont = pt.continuize(shot, dt=0.01, inplace=False)
 
@@ -282,17 +281,17 @@ def eval_shot(shot: system):
             return None
         
         # Use ball_ball.ids to see which ball IDs are involved in the event
-        cb_initial = event.get_ball("white", initial=True)
-        ob_initial = event.get_ball("red", initial=True)
+        ball1 = event.get_ball(event.ids[0], initial=True)
+        ball2 = event.get_ball(event.ids[1], initial=True)
 
-        center_to_center = pt.ptmath.unit_vector(ob_initial.xyz - cb_initial.xyz)
-        direction = pt.ptmath.unit_vector(cb_initial.vel)
+        center_to_center = pt.ptmath.unit_vector(ball2.xyz - ball1.xyz)
+        direction = pt.ptmath.unit_vector(ball1.vel - ball2.vel)
 
         cut_angle_radians = np.arccos(np.dot(direction, center_to_center))
         cut_angle_degrees = cut_angle_radians * 180 / np.pi
         hit_fraction = 1 - np.sin(cut_angle_radians)
 
-        print(f"{cut_angle_degrees=}", f"{hit_fraction=}")
+        # print(f"{cut_angle_degrees=}", f"{hit_fraction=}")
 
         return hit_fraction
 
@@ -306,27 +305,21 @@ def eval_shot(shot: system):
         
         return kisses
     
-    def point_distance(shot):
+    def eval_point_distance(shot):
         # calculate point distance
 
         # calculate 3 closest distances to make a point
         # if the shot is a point, calculate the distance at the point of contact
         # if b1 hit b2 and b2 before hitting 3 cushions, set point_distance = 3000
-        # Calculate time when B1 has hit 3 cushions
-
-        print('Open points in eval_shot.py/point_distance:')
-        print(' - Add options if ball no ball was hit')
-        print('   Use in that case distance to closes ball')        
-        print(' - If it was a point, calculate point distance from the trajectory cue ball to center of ball 3')
-        print('   consider also both balls can move.')
-        print('   Is hit_fraction usefull here?') 
-        
                 
         # Initialize variables
         point_distance = (3000.0, 3000.0, 3000.0)
         cushion_hit_count = 0          # Counter for ball_linear_cushion events
         check_time = None               # Variable to store the time when conditions are met
-        b2_found = False               # Flag for `b2` in agents
+        b2_found = 0               # Flag for `b2` in agents
+        hit_fraction = 0
+        point_distance0 = 3000.0
+        point_time = -1.0
 
         # Iterate through events
         for event in b1hit:
@@ -336,88 +329,113 @@ def eval_shot(shot: system):
                 # Store the time of the last `ball_linear_cushion` event
             
             # Condition 2: Check if b2 exists in agents (excluding b1)
-            if b2 in event.ids:
-                b2_found = True
+            if b2 in event.ids and b2_found==False:
+                b2_found = b2_found + 1
             
             # Check if the conditions are met
-            if cushion_hit_count == 3 and b2_found:
-                # We have met the requirements, store the time and break the loop
+            if cushion_hit_count >= 3 and b2_found == 1 and check_time == None:
+                # We have met the requirements, store the time
                 check_time = event.time
+            
+            if cushion_hit_count >= 3 and b2_found >= 1 and b3 in event.ids:
+                point_time = event.time
+                hit_fraction = eval_hit_fraction(shot, event)
+                point_distance0 = hit_fraction*Rball
+                print(point_distance0)
                 break
 
-        if is_point(system):
-            # calculate hit_fraction
-            print('calculate hit_fraction of point')
-            # hit_fraction = eval_hit_fraction(shot, b1hit)
+        if cushion_hit_count >= 3 and b2_found >= 1:
+            point_distance = eval_point_distance_3c_nopoint(check_time, point_distance0, point_time)
+            
 
         elif b2hit != [] and b3hit == []:
             # one ball was hit
-            print('One ball was hit')
+            # print('One ball was hit')
+            tmp = 0
 
         elif b2hit == [] and b3hit == []:
             # no ball was hit
-            print('No ball was hit')
- 
-        # Check if conditions were met and print the result
-        if cushion_hit_count >= 3 and b2_found:
-            print("Time of the last ball_linear_cushion event:", check_time)
-            tsel = t_b1 > check_time
-            y = b1b3dist[tsel]
-            t = t_b1[tsel]
+            # print('No ball was hit')
+            tmp = 0
+        
+        return point_distance
 
-            # find 3 different minima (if available) of b1b3dist[tsel]
-            # Find local minima (relative minima) in the data
-            minima_indices = argrelextrema(y, np.less)[0]
-            # check if the if distance was getting closer at the end, but not yet minimum
-            
-            if y[-2] >= y[-1]:
-                # Add the last index to the minima_indices if we have negative slope at the end
-                minima_indices = np.append(minima_indices, len(y)-1)
+    def eval_point_distance_3c_nopoint(check_time, point_distance0, point_time):
+        # Calculate the point distance for a 3-cushion shot that is not a point
+        # find 3 different minima (if available) of b1b3dist[tsel]
+        point_distance = (3000.0, 3000.0, 3000.0)
+        tsel = t_b1 > check_time
+        y = b1b3dist[tsel]
+        t = t_b1[tsel]
 
-            # Ensure the array has 3 elements
-            while len(minima_indices) < 3:
-                minima_indices = np.append(minima_indices, len(y)-1)
- 
-            # Sort the minima by their values (y values) and get the 3 smallest
-            sorted_minima_indices = minima_indices[np.argsort(y[minima_indices])][:3]
-            for idx in sorted_minima_indices:
-                print(f"Minima at time: {t[idx]}, value: {y[idx]}")
+        # Find local minima (relative minima) in the data
+        minima_indices = argrelextrema(y, np.less)[0]
+        
 
-            # Plot distances
-            plt.figure(figsize=(8, 5))
-            tsel = t_b1 > check_time
-            plt.plot(t_b1[tsel], b1b2dist[tsel], linestyle='-', color='r', label='Distance')
-            plt.plot(t_b1[tsel], b1b3dist[tsel], linestyle='-', color='b', label='Distance')
-            plt.plot(t_b1[tsel], b2b3dist[tsel], linestyle='-', color='k', label='Distance')
-            
-            plt.title('Distance Between Corresponding Points')
-            plt.xlabel('time in s')
-            plt.ylabel('Distance')
-            plt.grid(True)
-            plt.legend()
-            plt.show()
+        # When there is a point, then distance is limited by ball diameter
+        # Therefore replace the minima of the point
+        # Use the point time if it is given
+        if point_time > 0 and np.min(np.abs(t - point_time)) < 1.0e-6:
+            point_index = np.argmin(np.abs(t - point_time))
 
-        else:
-            print("Conditions not met.")
+            # now replace in y(minima_indices) the value y(point_index) = point_distance0
+            y[point_index] = point_distance0
 
+        # check if the distance was getting closer at the end, but not yet minimum
+        if y[-2] >= y[-1]:
+            # Add the last index to the minima_indices if we have negative slope at the end
+            minima_indices = np.append(minima_indices, len(y)-1)
+
+        # Ensure the array has 3 elements
+        while len(minima_indices) < 3:
+            minima_indices = np.append(minima_indices, len(y)-1)
+
+        # Sort the minima by their values (y values) and get the 3 smallest
+        sorted_minima_indices = minima_indices[np.argsort(y[minima_indices])][:3]
+        point_distance = y[sorted_minima_indices]
+
+        # Plot distances
+        plt.figure(figsize=(8, 5))
+     
+        plt.plot(t_b1[tsel], b1b2dist[tsel], linestyle='-', color='r', label='Distance')
+        plt.plot(t_b1[tsel], b1b3dist[tsel], linestyle='-', color='b', label='Distance')
+        plt.plot(t_b1[tsel], b2b3dist[tsel], linestyle='-', color='k', label='Distance')
+        
+        plt.title('Distance Between Corresponding Points')
+        plt.xlabel('time in s')
+        plt.ylabel('Distance')
+        plt.grid(True)
+        plt.legend()
+        plt.show()
 
         return point_distance
     
+
+    # START of evaluation
     # identify the balls cueball, objectball, targetball and store in ballorder
     (b1, b2, b3) = get_ball_order(shot)
+    print(f"{b1=}, {b2=}, {b3=}")
+
     (b1hit, b2hit, b3hit) = get_ball_events(shot)
     (t_b1, b1_coords, b2_coords, b3_coords) = add_events_to_coords(shot)
     
     (b1b2dist, b1b3dist, b2b3dist) = ball_ball_distances()
     # calculate point distance
-    point_distance = point_distance(shot)
+    point_distance = eval_point_distance(shot)
+    print(f"{point_distance=}")
 
 
+start_time = time.time()
 
+for i in range(1):
+    # Evolve the shot.
+    pt.simulate(system, inplace=True)
+    print(f"is_point: {is_point(system)}")
+    eval_shot(system)
 
-eval_shot(system)
-
-
+elapsed_time = time.time() - start_time
+print(f"Execution time: {elapsed_time} seconds")
+print(f"time: {time.time() - start_time} s")
 
 # Open up the shot in the GUI
 pt.show(system)
