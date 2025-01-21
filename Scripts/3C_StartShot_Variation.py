@@ -50,7 +50,7 @@ cue_len = 1.47
 cue_tip_R = 0.022
 cue_tip_mass = 0.0000001
 
-shotnums = 500
+shotnums = 250
 # Initialize an empty list to store angles
 points = np.zeros(shotnums)
 

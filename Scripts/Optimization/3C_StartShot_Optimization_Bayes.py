@@ -85,8 +85,8 @@ system = system_template.copy()
 sidespin_stddev = 0.05
 vertspin_stddev = 0.05
 cuespeed_stddev = 0.2
-phi_delta_stddev = 0.2
-shotnums = 500
+phi_delta_stddev = 0.1
+shotnums = 250
 
 # generate shot props from new mean values
 sidespin_delta = np.random.normal(loc=0, scale=sidespin_stddev, size=shotnums)
