@@ -15,160 +15,354 @@ import torch.optim as optim
 from collections import deque
 import random
 
-if True == False:
 
-    # from pooltool.physics.resolve.resolver import RESOLVER_CONFIG_PATH
-    # print(RESOLVER_CONFIG_PATH)
+# Hyperparameters
+STATE_DIM = 24  # Input size (positions, distances, directions, etc.)
+ACTION_DIM = 5  # Output size (v, phi, theta, a, b)
+ACTOR_LR = 1e-4
+CRITIC_LR = 1e-3
+GAMMA = 0.99
+TAU = 0.005  # For soft updates
+BUFFER_SIZE = int(1e6)
+BATCH_SIZE = 64
 
-    # We need a table, some balls, and a cue stick
-    # table = pt.Table.default("billiard")
+# Actor Network
+class Actor(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(Actor, self).__init__()
+        self.fc1 = nn.Linear(state_dim, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.out = nn.Linear(256, action_dim)  # Outputs continuous action values
 
-    # Ball Positions
-    wpos = (0.5275, 0.71)  # White
-    ypos = (0.71, 0.71)  # Yellow
-    rpos = (0.71, 2.13)  # Red
+    def forward(self, state):
+        x = torch.relu(self.fc1(state))
+        x = torch.relu(self.fc2(x))
+        return torch.tanh(self.out(x))  # Actions in [-1, 1]
 
-    cutangle0 = 30
+# Critic Network
+class Critic(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(Critic, self).__init__()
+        self.fc1 = nn.Linear(state_dim + action_dim, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.out = nn.Linear(256, 1)  # Outputs Q-value
 
-    # shot props
-    sidespin = 0.24
-    vertspin = 0.2
-    cuespeed = 3.2
+    def forward(self, state, action):
+        x = torch.cat([state, action], dim=1)  # Concatenate state and action
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        return self.out(x)
 
-    # define the properties
-    u_slide = 0.15
-    u_roll = 0.005
-    u_sp_prop = 10 * 2 / 5 / 9
-    u_ballball = 0.05
-    e_ballball = 0.95
-    e_cushion = 0.9
-    f_cushion = 0.15
-    grav = 9.81
+# Replay Buffer
+class ReplayBuffer:
+    def __init__(self, max_size):
+        self.buffer = deque(maxlen=max_size)
 
-    mball = 0.210
-    Rball = 61.5 / 1000 / 2
+    def add(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
 
-    cue_mass = 0.576
-    cue_len = 1.47
-    cue_tip_R = 0.022
-    cue_tip_mass = 0.0000001
+    def sample(self, batch_size):
+        batch = random.sample(self.buffer, batch_size)
+        states, actions, rewards, next_states, dones = zip(*batch)
+        return (torch.tensor(states, dtype=torch.float32),
+                torch.tensor(actions, dtype=torch.float32),
+                torch.tensor(rewards, dtype=torch.float32),
+                torch.tensor(next_states, dtype=torch.float32),
+                torch.tensor(dones, dtype=torch.float32))
 
-    # Build a table with default BILLIARD specs
-    table = pt.Table.default(pt.TableType.BILLIARD)
-
-    # create the cue
-    cue_specs = pt.objects.CueSpecs(
-        brand="Predator",
-        M=cue_mass,
-        length=cue_len,
-        tip_radius=cue_tip_R,
-        butt_radius=0.02,
-        end_mass=cue_tip_mass,
-    )
-    cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
-
-    # Generate the ball layout from the THREECUSHION GameType using the BILLIARD table
-    # balls = pt.get_rack(pt.GameType.THREECUSHION, table=table)
-
-    # Create balls
-    wball = pt.Ball.create("white", xy=wpos, m=mball, R=Rball,
-                u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                e_b=e_ballball, e_c=e_cushion,
-                f_c=f_cushion, g=grav)
-
-    yball = pt.Ball.create("yellow", xy=ypos, m=mball, R=Rball,
-                u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                e_b=e_ballball, e_c=e_cushion,
-                f_c=f_cushion, g=grav)
-
-    rball = pt.Ball.create("red", xy=rpos, m=mball, R=Rball,
-                u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                e_b=e_ballball, e_c=e_cushion,
-                f_c=f_cushion, g=grav)
+    def size(self):
+        return len(self.buffer)
 
 
-    # Wrap it up as a System
-    system_template = pt.System(
-        table=table,
-        balls=(wball, yball, rball),
-        cue=cue,
-    )
+class DDPGAgent:
+    def __init__(self, state_dim, action_dim):
+        self.actor = Actor(state_dim, action_dim)
+        self.actor_target = Actor(state_dim, action_dim)
+        self.critic = Critic(state_dim, action_dim)
+        self.critic_target = Critic(state_dim, action_dim)
 
-    # Creates a deep copy of the template
-    system = system_template.copy()
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=ACTOR_LR)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=CRITIC_LR)
+        self.replay_buffer = ReplayBuffer(BUFFER_SIZE)
 
-    phi = pt.aim.at_ball(system, "red", cut=cutangle0)
-    system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin)
+        # Initialize target networks with same weights
+        self.actor_target.load_state_dict(self.actor.state_dict())
+        self.critic_target.load_state_dict(self.critic.state_dict())
 
-    # Shot analysis
-    def eval_shot(shot: system):
+    def select_action(self, state, noise=0.1):
+        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+        action = self.actor(state).detach().numpy()[0]
+        action += noise * np.random.normal(size=action.shape)  # Add exploration noise
+        return np.clip(action, -1, 1)
 
-        # Shot analysis and evaluation of results
-        # Identify the balls b1=cueball, b2=objectball, b3=targetball
-        #   - if no ball-ball event, b2 is the ball which closest to b1 after 3 cushions
-        # Get the ball-ball events for each ball
-        # Calculate point distance
-        # Calculate hit fractions for 
-        #   - b1b2 hit to get first contact
-        #   - b1b3 hit to get how safe was point
-        #   - b2b3 hit to get how bad was the kiss
-        #   - b2b3 hit to get how bad was the kiss
-        #   - b1b3 hit before 3 cushions to get how bad was the shot
-        #
+    def train_step(self, state, action, reward, next_state, done):
+        """
+        Stepwise update: Train the agent immediately after collecting a transition.
+        """
+        # Store transition in replay buffer
+        self.replay_buffer.add(state, action, reward, next_state, done)
+
+        # Ensure enough samples in buffer for training
+        if self.replay_buffer.size() < BATCH_SIZE:
+            return
+
+        # Sample a batch from the replay buffer
+        states, actions, rewards, next_states, dones = self.replay_buffer.sample(BATCH_SIZE)
+
+        # Critic loss
+        next_actions = self.actor_target(next_states)
+        target_q = rewards + GAMMA * self.critic_target(next_states, next_actions) * (1 - dones)
+        current_q = self.critic(states, actions)
+        critic_loss = nn.MSELoss()(current_q, target_q.detach())
+
+        # Actor loss
+        actor_loss = -self.critic(states, self.actor(states)).mean()
+
+        # Update critic
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
+
+        # Update actor
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        self.actor_optimizer.step()
+
+        # Soft update target networks
+        self.soft_update(self.actor, self.actor_target)
+        self.soft_update(self.critic, self.critic_target)
+
+    def train_episode(self, episode_trajectory, episode_reward):
+        """
+        Episode-based update: Train the agent at the end of an episode.
+        """
+        # Store the entire trajectory in the replay buffer
+        for transition in episode_trajectory:
+            state, action, reward, next_state, done = transition
+            self.replay_buffer.add(state, action, reward, next_state, done)
+
+        # Perform multiple training steps (often equal to the episode length)
+        for _ in range(len(episode_trajectory)):
+            if self.replay_buffer.size() < BATCH_SIZE:
+                return
+
+            # Sample a batch from the replay buffer
+            states, actions, rewards, next_states, dones = self.replay_buffer.sample(BATCH_SIZE)
+
+            # Critic loss
+            next_actions = self.actor_target(next_states)
+            target_q = rewards + GAMMA * self.critic_target(next_states, next_actions) * (1 - dones)
+            current_q = self.critic(states, actions)
+            critic_loss = nn.MSELoss()(current_q, target_q.detach())
+
+            # Actor loss
+            actor_loss = -self.critic(states, self.actor(states)).mean()
+
+            # Update critic
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic_optimizer.step()
+
+            # Update actor
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            self.actor_optimizer.step()
+
+            # Soft update target networks
+            self.soft_update(self.actor, self.actor_target)
+            self.soft_update(self.critic, self.critic_target)
+
+    def soft_update(self, net, target_net):
+        """
+        Soft update of the target network using TAU.
+        """
+        for target_param, param in zip(target_net.parameters(), net.parameters()):
+            target_param.data.copy_(TAU * param.data + (1 - TAU) * target_param.data)
+
+
+class BilliardEnv:
+    def __init__(self):
+        self.table_width = 2.84  # Table dimensions (meters)
+        self.table_height = 1.42
+        self.series_length = 0
+        self.current_step = 0
+        self.episode_rewards = []
+
+        # Ball Positions
+        self.ball1_ini = (0.5275, 0.71)  # White
+        self.ball2_ini = (0.71, 0.71)  # Yellow
+        self.ball3_ini = (0.71, 2.13)  # Red
+
+        # define the properties
+        self.u_slide = 0.15
+        self.u_roll = 0.005
+        self.u_sp_prop = 10 * 2 / 5 / 9
+        self.u_ballball = 0.05
+        self.e_ballball = 0.95
+        self.e_cushion = 0.9
+        self.f_cushion = 0.15
+        self.grav = 9.81
+
+        self.mball = 0.210
+        self.Rball = 61.5 / 1000 / 2
+
+        cue_mass = 0.576
+        cue_len = 1.47
+        cue_tip_R = 0.022
+        cue_tip_mass = 0.0000001
+
+        # Build a table with default BILLIARD specs
+        self.table = pt.Table.default(pt.TableType.BILLIARD)
+
+        # create the cue
+        cue_specs = pt.objects.CueSpecs(
+            brand="Predator",
+            M=cue_mass,
+            length=cue_len,
+            tip_radius=cue_tip_R,
+            butt_radius=0.02,
+            end_mass=cue_tip_mass,
+        )
+        self.cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
+
+        self.interp_v = interp1d((-1.0, 1.0), (1.0, 7.0), kind='linear', fill_value="extrapolate")
+        self.interp_phi = interp1d((-1.0, 1.0), (0, 2*np.pi), kind='linear', fill_value="extrapolate")
+        self.interp_theta = interp1d((-1.0, 1.0), (0.0, np.pi/2), kind='linear', fill_value="extrapolate")
+        self.interp_a = interp1d((-1.0, 1.0), (-0.6, 0.6), kind='linear', fill_value="extrapolate")
+        self.interp_b = interp1d((-1.0, 1.0), (-0.6, 0.6), kind='linear', fill_value="extrapolate")
+
+        self.reset()
+
+    def reset(self):
+        # Randomize ball positions within valid regions
+        # self.ball1 = np.random.uniform(
+        #     [self.Rball, self.Rball], [self.table_width - self.Rball, self.table_height - self.Rball])
+        # self.ball2 = np.random.uniform(
+        #     [self.Rball, self.Rball], [self.table_width - self.Rball, self.table_height - self.Rball])
+        # self.ball3 = np.random.uniform(
+        #     [self.Rball, self.Rball], [self.table_width - self.Rball, self.table_height - self.Rball])
+    
+        # start from Position from init
+        self.ball1 = self.ball1_ini
+        self.ball2 = self.ball2_ini
+        self.ball3 = self.ball3_ini
         
-        # Player Ability  model:
-        # Shot quality is defined by the distribution (mean value and standard deviation) of shot parameters 
-        #     - hit direction horizontal, elevation, 
-        #     - hitpoint on cue ball
-        #     - velocity
+        self.series_length = 0
+        self.current_step = 0
+        self.episode_rewards = []
+
+        state = self.prepare_new_shot(3.0, 50, 0., 0., 0.)
+
+        return state
+
+    def prepare_new_shot(self, v, phi, theta, a, b):
+
+        # Create balls in new positions
+        wball = pt.Ball.create("white", xy=self.ball1, m=self.mball, R=self.Rball,
+                    u_s=self.u_slide, u_r=self.u_roll, 
+                    u_sp_proportionality=self.u_sp_prop, u_b=self.u_ballball,
+                    e_b=self.e_ballball, e_c=self.e_cushion,
+                    f_c=self.f_cushion, g=self.grav)
+
+        yball = pt.Ball.create("yellow", xy=self.ball2, m=self.mball, R=self.Rball,
+                    u_s=self.u_slide, u_r=self.u_roll, 
+                    u_sp_proportionality=self.u_sp_prop, u_b=self.u_ballball,
+                    e_b=self.e_ballball, e_c=self.e_cushion,
+                    f_c=self.f_cushion, g=self.grav)
         
-        # These should be depending on player profile
-        # - Depending on player size the reach to cue ball influences the shot quality: 
-        #     - standard, no restriction, both feet on ground, 
-        #     - one foot on ground
-        #     - use of extension
-        #     - use of bridge
-        # - shot quality depending shot speed
-        # - left / right hand
-        # - dominant eye dependency: 
-        #     - playing left / right spin 
-        #     - playing to b2 left / right
-        # - optical illusions by playing parallel or angled to cushions 
+        rball = pt.Ball.create("red", xy=self.ball3, m=self.mball, R=self.Rball,
+                    u_s=self.u_slide, u_r=self.u_roll, 
+                    u_sp_proportionality=self.u_sp_prop, u_b=self.u_ballball,
+                    e_b=self.e_ballball, e_c=self.e_cushion,
+                    f_c=self.f_cushion, g=self.grav)
         
 
 
-        # for evaluations and further actions (e.g. machine learning), we need to generate/store the following information
-        # INITIAL DATA:
-        #   - ball-ball distances
-        #   - angles between balls
-        #   - distances of the balls to the cushions
-        #   - evaluate reachable positions and shot quality from player ability model
-        #       - by body size, max reach, shot quality depending on distance
-        #       - by left / right hand, shot quality depending on hand
-        # IN-SHOT DATA:
-        #   - for each ball-ball event
-        #       - hit fractions
-        #       - ball-ball events for each ball string positions, velocities, angular velocities
-        #   - for each cushion hit
-        #       - cushion hit positions, velocities, angular velocities, 
-        #       - direction in
-        #       - direction initial out
-        #       - direction final out with offset from cushion hit point
-        # POST-SHOT:
-        #   - ispoint and point distance
-        #   - iskiss and kisses distances
-        #   - isfluke and fluke distance
-        #   - point distance
-        #   - classification of route (name the shot)
-        #   - rate the following position
-        #   - transform to standard orientation to reduce effort by using symmetries
-        #       - with hand (left/right) restriction 21 symmetries are available ==> reduction of total position by factor 2
-        #       - without restriction 2 symmetries are available ==> reduction of total position by factor 4
+        # Wrap it up as a System
+        self.cue.set_state(V0=v, phi=phi, theta = theta, a=a, b=b)
+        self.system = pt.System(table=self.table, balls=(wball, yball, rball), cue=self.cue)
 
+        state = self.get_state()
+        return state
 
-        # NEXT STEPS:
-        # - plot table with routes in figure
-        # - Correct identification the balls b1, b2, b3 considering the also the case when no ball was hit
+    def get_state(self):
+        # Calculate distances and directions
+        d_cue_to_2 = np.linalg.norm(np.array(self.ball1) - np.array(self.ball2))
+        d_cue_to_3 = np.linalg.norm(np.array(self.ball1) - np.array(self.ball3))
+        d_2_to_3 = np.linalg.norm(np.array(self.ball2) - np.array(self.ball3))
+
+        #print('Ersin-Line 233: Check the angle whether it is in table coordinate system')
+        phi_cue_to_2 = pt.aim.at_ball(self.system, "yellow", cut=0.0)
+        phi_cue_to_3 = pt.aim.at_ball(self.system, "red", cut=0.0)
+        phi_2_to_3 = np.arctan2(self.ball3[1] - self.ball2[1], self.ball3[0] - self.ball2[0])*180/np.pi
+
+        d_cushions_to_1 = [self.ball1[0]-self.Rball, self.table_width - self.ball1[1] - self.Rball,
+                      self.ball1[0] - self.Rball, self.table_height - self.ball1[0] - self.Rball]
+        d_cushions_to_2 = [self.ball2[0]-self.Rball, self.table_width - self.ball2[1] - self.Rball,
+                      self.ball2[0] - self.Rball, self.table_height - self.ball2[0] - self.Rball]
+        d_cushions_to_3 = [self.ball3[0]-self.Rball, self.table_width - self.ball3[1] - self.Rball,
+                      self.ball3[0] - self.Rball, self.table_height - self.ball3[0] - self.Rball]
+
+        return np.array([*self.ball1, *self.ball2, *self.ball3, d_cue_to_2, phi_cue_to_2,
+                         d_cue_to_3, phi_cue_to_3, d_2_to_3, phi_2_to_3, 
+                         *d_cushions_to_1, *d_cushions_to_2, *d_cushions_to_3])
+
+    def step(self, action):
+        
+        v_n, phi_n, theta_n, a_n, b_n = action  
+        # Denormalize actions
+        v = self.interp_v(v_n)
+        phi = self.interp_phi(v_n)
+        theta = self.interp_theta(v_n)
+        a = self.interp_a(v_n)
+        b = self.interp_b(v_n)
+
+        # Simulate shot using physics engine or model (implement this)
+
+        self.prepare_new_shot(v, phi, theta, a, b)
+
+        self.simulate_shot()
+        
+        reward = self.calculate_reward()
+        
+        # Track rewards for episode-based updates
+        self.episode_rewards.append(reward)
+        
+        # Update state and check if the episode is done
+        next_state = self.get_state()
+
+        if self.is_point:
+            self.series_length += 1
+            done = False
+        else:
+            self.series_length = 0
+            done = True
+
+        return next_state, reward, done
+
+    def simulate_shot(self):
+        system = self.system
+        # run the phsics model
+        pt.simulate(system, inplace=True)
+
+        self.ball1 = system.balls['white'].state.rvw[0,:2]
+        self.ball2 = system.balls['white'].state.rvw[0,:2]
+        self.ball3 = system.balls['white'].state.rvw[0,:2]
+
+        self.is_point = is_point(system)
+
+        pass
+
+    def calculate_reward(self):
+
+        point_distance = self.eval_shot()
+        reward = self.point_distance_reward(point_distance)
+ 
+        return reward
+
+# Shot analysis
+    def eval_shot(self):
+        shot = self.system
 
         def get_ball_order(shot):
             # identify the balls b1=cueball, b2=objectball, b3=targetball
@@ -316,16 +510,17 @@ if True == False:
 
             # calculate 3 closest distances to make a point
             # if the shot is a point, calculate the distance at the point of contact
-            # if b1 hit b2 and b2 before hitting 3 cushions, set point_distance = 3000
+            # if b1 hit b2 and b2 before hitting 3 cushions, set point_distance = 3.0
                     
             # Initialize variables
-            point_distance = (3000.0, 3000.0, 3000.0)
+            point_distance = (3.0, 3.0, 3.0)
             cushion_hit_count = 0          # Counter for ball_linear_cushion events
             check_time = None               # Variable to store the time when conditions are met
             b2_found = 0               # Flag for `b2` in agents
             hit_fraction = 0
-            point_distance0 = 3000.0
+            point_distance0 = 3.0
             point_time = -1.0
+            Rball = shot.balls['white'].params.R
 
             # Iterate through events
             for event in b1hit:
@@ -369,7 +564,7 @@ if True == False:
         def eval_point_distance_3c_nopoint(check_time, point_distance0, point_time):
             # Calculate the point distance for a 3-cushion shot that is not a point
             # find 3 different minima (if available) of b1b3dist[tsel]
-            point_distance = (3000.0, 3000.0, 3000.0)
+            point_distance = (3.0, 3.0, 3.0)
             tsel = t_b1 > check_time
             y = b1b3dist[tsel]
             t = t_b1[tsel]
@@ -400,19 +595,19 @@ if True == False:
             sorted_minima_indices = minima_indices[np.argsort(y[minima_indices])][:3]
             point_distance = y[sorted_minima_indices]
 
-            # Plot distances
-            plt.figure(figsize=(8, 5))
+            # # Plot distances
+            # plt.figure(figsize=(8, 5))
         
-            plt.plot(t_b1[tsel], b1b2dist[tsel], linestyle='-', color='r', label='Distance')
-            plt.plot(t_b1[tsel], b1b3dist[tsel], linestyle='-', color='b', label='Distance')
-            plt.plot(t_b1[tsel], b2b3dist[tsel], linestyle='-', color='k', label='Distance')
+            # plt.plot(t_b1[tsel], b1b2dist[tsel], linestyle='-', color='r', label='Distance')
+            # plt.plot(t_b1[tsel], b1b3dist[tsel], linestyle='-', color='b', label='Distance')
+            # plt.plot(t_b1[tsel], b2b3dist[tsel], linestyle='-', color='k', label='Distance')
             
-            plt.title('Distance Between Corresponding Points')
-            plt.xlabel('time in s')
-            plt.ylabel('Distance')
-            plt.grid(True)
-            plt.legend()
-            plt.show()
+            # plt.title('Distance Between Corresponding Points')
+            # plt.xlabel('time in s')
+            # plt.ylabel('Distance')
+            # plt.grid(True)
+            # plt.legend()
+            # plt.show()
 
             return point_distance
         
@@ -420,234 +615,77 @@ if True == False:
         # START of evaluation
         # identify the balls cueball, objectball, targetball and store in ballorder
         (b1, b2, b3) = get_ball_order(shot)
-        print(f"{b1=}, {b2=}, {b3=}")
+        #print(f"{b1=}, {b2=}, {b3=}")
 
         (b1hit, b2hit, b3hit) = get_ball_events(shot)
         (t_b1, b1_coords, b2_coords, b3_coords) = add_events_to_coords(shot)
         
         (b1b2dist, b1b3dist, b2b3dist) = ball_ball_distances()
-        # calculate point distance
+        # calculate point distances
         point_distance = eval_point_distance(shot)
-        print(f"{point_distance=}")
+        print(f"{point_distance[0]=}")
 
+        return point_distance
 
-    start_time = time.time()
+    def point_distance_reward(self, point_distance):
+        
+        point_distance_0 = (0, 2 * self.Rball * 0.7, 2 * self.Rball, 2 * self.Rball * 0.3, 0.2, 3)
+        reward_0 = (10, 10, 5, -5, -10, -50)
 
-    for i in range(1):
-        # Evolve the shot.
-        pt.simulate(system, inplace=True)
-        print(f"is_point: {is_point(system)}")
-        eval_shot(system)
+        # Interpolation function
+        interpolator = interp1d(point_distance_0, reward_0, kind='linear', fill_value="extrapolate")  
+        
+        # New points for interpolation
+        reward = interpolator(point_distance[0])
+        
+        return reward
 
-    elapsed_time = time.time() - start_time
-    print(f"Execution time: {elapsed_time} seconds")
-    print(f"time: {time.time() - start_time} s")
-
-    # Open up the shot in the GUI
-    pt.show(system)
-
-
-
-# Hyperparameters
-STATE_DIM = 21  # Input size (positions, distances, directions, etc.)
-ACTION_DIM = 5  # Output size (v, phi, theta, a, b)
-ACTOR_LR = 1e-4
-CRITIC_LR = 1e-3
-GAMMA = 0.99
-TAU = 0.005  # For soft updates
-BUFFER_SIZE = int(1e6)
-BATCH_SIZE = 64
-
-# Actor Network
-class Actor(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(Actor, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.out = nn.Linear(256, action_dim)  # Outputs continuous action values
-
-    def forward(self, state):
-        x = torch.relu(self.fc1(state))
-        x = torch.relu(self.fc2(x))
-        return torch.tanh(self.out(x))  # Actions in [-1, 1]
-
-# Critic Network
-class Critic(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(Critic, self).__init__()
-        self.fc1 = nn.Linear(state_dim + action_dim, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.out = nn.Linear(256, 1)  # Outputs Q-value
-
-    def forward(self, state, action):
-        x = torch.cat([state, action], dim=1)  # Concatenate state and action
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        return self.out(x)
-
-# Replay Buffer
-class ReplayBuffer:
-    def __init__(self, max_size):
-        self.buffer = deque(maxlen=max_size)
-
-    def add(self, state, action, reward, next_state, done):
-        self.buffer.append((state, action, reward, next_state, done))
-
-    def sample(self, batch_size):
-        batch = random.sample(self.buffer, batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
-        return (torch.tensor(states, dtype=torch.float32),
-                torch.tensor(actions, dtype=torch.float32),
-                torch.tensor(rewards, dtype=torch.float32),
-                torch.tensor(next_states, dtype=torch.float32),
-                torch.tensor(dones, dtype=torch.float32))
-
-    def size(self):
-        return len(self.buffer)
-
-# DDPG Agent
-class DDPGAgent:
-    def __init__(self, state_dim, action_dim):
-        self.actor = Actor(state_dim, action_dim)
-        self.actor_target = Actor(state_dim, action_dim)
-        self.critic = Critic(state_dim, action_dim)
-        self.critic_target = Critic(state_dim, action_dim)
-
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=ACTOR_LR)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=CRITIC_LR)
-        self.replay_buffer = ReplayBuffer(BUFFER_SIZE)
-
-        # Initialize target networks with same weights
-        self.actor_target.load_state_dict(self.actor.state_dict())
-        self.critic_target.load_state_dict(self.critic.state_dict())
-
-    def select_action(self, state, noise=0.1):
-        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
-        action = self.actor(state).detach().numpy()[0]
-        action += noise * np.random.normal(size=action.shape)  # Add exploration noise
-        return np.clip(action, -1, 1)
-
-    def train(self):
-        if self.replay_buffer.size() < BATCH_SIZE:
-            return  # Not enough samples
-
-        states, actions, rewards, next_states, dones = self.replay_buffer.sample(BATCH_SIZE)
-
-        # Critic loss
-        next_actions = self.actor_target(next_states)
-        target_q = rewards + GAMMA * self.critic_target(next_states, next_actions) * (1 - dones)
-        current_q = self.critic(states, actions)
-        critic_loss = nn.MSELoss()(current_q, target_q.detach())
-
-        # Actor loss
-        actor_loss = -self.critic(states, self.actor(states)).mean()
-
-        # Update networks
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
-
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        self.actor_optimizer.step()
-
-        # Soft update target networks
-        self.soft_update(self.actor, self.actor_target)
-        self.soft_update(self.critic, self.critic_target)
-
-    def soft_update(self, net, target_net):
-        for target_param, param in zip(target_net.parameters(), net.parameters()):
-            target_param.data.copy_(TAU * param.data + (1 - TAU) * target_param.data)
-
-
-state = [
-    x1, y1, x2, y2, x3, y3,  # Ball positions
-    d_cue_to_2, phi_cue_to_2, d_cue_to_3, phi_cue_to_3,  # Cue ball distances/directions
-    d_2_to_3, phi_2_to_3,  # Ball 2 to Ball 3 distances/directions
-    d_cushion1, d_cushion2, d_cushion3,  # Ball-to-cushion distances
-]
-
-action = [v_norm, phi_norm, theta_norm, a_norm, b_norm]
-
-
-class BilliardEnv:
-    def __init__(self):
-        self.table_width = 2.84  # Table dimensions (meters)
-        self.table_height = 1.42
-        self.reset()
-
-    def reset(self):
-        # Randomize ball positions within valid regions
-        self.ball1 = np.random.uniform([0.1, 0.1], [2.74, 1.32])
-        self.ball2 = np.random.uniform([0.1, 0.1], [2.74, 1.32])
-        self.ball3 = np.random.uniform([0.1, 0.1], [2.74, 1.32])
-        state = self.get_state()
-        return state
-
-    def get_state(self):
-        # Calculate distances and directions
-        d_cue_to_2 = np.linalg.norm(self.ball1 - self.ball2)
-        phi_cue_to_2 = np.arctan2(self.ball2[1] - self.ball1[1], self.ball2[0] - self.ball1[0])
-        d_cue_to_3 = np.linalg.norm(self.ball1 - self.ball3)
-        phi_cue_to_3 = np.arctan2(self.ball3[1] - self.ball1[1], self.ball3[0] - self.ball1[0])
-        d_2_to_3 = np.linalg.norm(self.ball2 - self.ball3)
-        phi_2_to_3 = np.arctan2(self.ball3[1] - self.ball2[1], self.ball3[0] - self.ball2[0])
-        d_cushions = [min(self.ball1[0], self.table_width - self.ball1[0]), 
-                      min(self.ball2[0], self.table_width - self.ball2[0]),
-                      min(self.ball3[0], self.table_width - self.ball3[0])]
-
-        return np.array([*self.ball1, *self.ball2, *self.ball3, d_cue_to_2, phi_cue_to_2,
-                         d_cue_to_3, phi_cue_to_3, d_2_to_3, phi_2_to_3, *d_cushions])
-
-    def step(self, action):
-        v, phi, theta, a, b = action  # Denormalize actions if necessary
-        # Simulate shot using physics engine or model (implement this)
-        self.simulate_shot(v, phi, theta, a, b)
-
-        # Calculate new positions of the balls (update self.ball1, self.ball2, self.ball3)
-        new_state = self.get_state()
-
-        # Calculate reward (implement reward function)
-        reward, done = self.calculate_reward()
-        return new_state, reward, done
-
-    def simulate_shot(self, v, phi, theta, a, b):
-        # Placeholder: implement your billiard physics model
-        pass
-
-    def calculate_reward(self):
-        # Reward: +1 for a successful shot, -distance penalty for failure
-        is_point = self.check_valid_point()
-        if is_point:
-            return 1.0, True
-        else:
-            distance_penalty = np.linalg.norm(self.ball1 - self.ball2)  # Example penalty
-            return -distance_penalty, False
-
-    def check_valid_point(self):
-        # Implement 3-cushion shot validation logic
-        return False
-
+    
 env = BilliardEnv()
 agent = DDPGAgent(STATE_DIM, ACTION_DIM)
 
+
 num_episodes = 1000
 max_steps = 200  # Max steps per episode
+
 for episode in range(num_episodes):
     state = env.reset()
-    episode_reward = 0
+    episode_trajectory = []  # Store transitions for episode-based updates
+    highscore = 0
+    highscore_reward = 10
+    total_reward = 0
+    score = 0
 
     for step in range(max_steps):
-        action = agent.select_action(state)  # Choose action using the agent
-        next_state, reward, done = env.step(action)  # Interact with the environment
-        agent.replay_buffer.add(state, action, reward, next_state, done)  # Store experience
-        agent.train()  # Train the agent using replay buffer
+        # Select an action
+        action = agent.select_action(state)
+        print(f"Step: {step}, :{action}")
+        # Step in the environment
+        next_state, reward, done = env.step(action)
+
+        # Store the transition for episode-based updates
+        episode_trajectory.append((state, action, reward, next_state, done))
+
+        # Stepwise Update (immediate)
+        agent.train_step(state, action, reward, next_state, done)
+
+        # Update state and accumulate episode reward
         state = next_state
-        episode_reward += reward
-
+ 
         if done:
-            break
+            if score > highscore:
+                highscore = score
+                total_reward += highscore_reward
 
-    print(f"Episode {episode}, Reward: {episode_reward}")
+            break
+        else:
+            score += 1
+            total_reward += reward
+
+
+    # Episode-Based Update (end of episode)
+
+    print(f"Episode {episode}, Step Reward: {reward}, Episode Reward: {total_reward}")
+    agent.train_episode(episode_trajectory, total_reward)
 
 
