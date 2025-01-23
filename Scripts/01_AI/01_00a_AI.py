@@ -25,6 +25,7 @@ GAMMA = 0.99
 TAU = 0.005  # For soft updates
 BUFFER_SIZE = int(1e6)
 BATCH_SIZE = 64
+torch.autograd.set_detect_anomaly(True)
 
 # Actor Network
 class Actor(nn.Module):
@@ -61,14 +62,29 @@ class ReplayBuffer:
     def add(self, state, action, reward, next_state, done):
         self.buffer.append((state, action, reward, next_state, done))
 
+    # def sample(self, batch_size):
+    #     batch = random.sample(self.buffer, batch_size)
+    #     states, actions, rewards, next_states, dones = zip(*batch)
+
+
+    #     return (torch.tensor(states, dtype=torch.float32),
+    #             torch.tensor(actions, dtype=torch.float32),
+    #             torch.tensor(rewards, dtype=torch.float32),
+    #             torch.tensor(next_states, dtype=torch.float32),
+    #             torch.tensor(dones, dtype=torch.float32))
+    
     def sample(self, batch_size):
         batch = random.sample(self.buffer, batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
-        return (torch.tensor(states, dtype=torch.float32),
-                torch.tensor(actions, dtype=torch.float32),
-                torch.tensor(rewards, dtype=torch.float32),
-                torch.tensor(next_states, dtype=torch.float32),
-                torch.tensor(dones, dtype=torch.float32))
+        
+        # Convert each list of arrays into a numpy array, then into a tensor
+        states = torch.tensor(np.array(states), dtype=torch.float32)
+        actions = torch.tensor(np.array(actions), dtype=torch.float32)
+        rewards = torch.tensor(np.array(rewards), dtype=torch.float32)
+        next_states = torch.tensor(np.array(next_states), dtype=torch.float32)
+        dones = torch.tensor(np.array(dones), dtype=torch.float32)
+
+        return states, actions, rewards, next_states, dones
 
     def size(self):
         return len(self.buffer)
@@ -92,7 +108,7 @@ class DDPGAgent:
     def select_action(self, state, noise=0.1):
         state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
         action = self.actor(state).detach().numpy()[0]
-        action += noise * np.random.normal(size=action.shape)  # Add exploration noise
+        action = action + noise * np.random.normal(size=action.shape)  # Add exploration noise
         return np.clip(action, -1, 1)
 
     def train_step(self, state, action, reward, next_state, done):
@@ -109,14 +125,35 @@ class DDPGAgent:
         # Sample a batch from the replay buffer
         states, actions, rewards, next_states, dones = self.replay_buffer.sample(BATCH_SIZE)
 
+        # # Convert to tensors
+        # states = torch.tensor(states.clone().detach(), dtype=torch.float32)
+        # actions = torch.tensor(actions.clone().detach(), dtype=torch.float32)
+        # rewards = torch.tensor(rewards.clone().detach(), dtype=torch.float32).unsqueeze(1)
+        # next_states = torch.tensor(next_states.clone().detach(), dtype=torch.float32)
+        # dones = torch.tensor(dones.clone().detach(), dtype=torch.float32).unsqueeze(1)
+
         # Critic loss
         next_actions = self.actor_target(next_states)
-        target_q = rewards + GAMMA * self.critic_target(next_states, next_actions) * (1 - dones)
+        target_q = rewards.unsqueeze(1) + GAMMA * self.critic_target(next_states, next_actions).detach() * (1 - dones.unsqueeze(1))
+        # target_q = rewards + GAMMA * self.critic_target(next_states, next_actions) * (1 - dones)
         current_q = self.critic(states, actions)
+        
+        # Debugging shapes
+        print(f"states shape: {states.shape}")        # Expected: [BATCH_SIZE, STATE_DIM]
+        print(f"actions shape: {actions.shape}")      # Expected: [BATCH_SIZE, ACTION_DIM]
+        print(f"rewards shape: {rewards.shape}")      # Expected: [BATCH_SIZE, 1]
+        print(f"next_states shape: {next_states.shape}")  # Expected: [BATCH_SIZE, STATE_DIM]
+        print(f"dones shape: {dones.shape}")          # Expected: [BATCH_SIZE, 1]
+
+        print(f"current_q shape: {current_q.shape}")  # Expected: [BATCH_SIZE, 1]
+        print(f"target_q shape: {target_q.shape}")    # Expected: [BATCH_SIZE, 1]
+
         critic_loss = nn.MSELoss()(current_q, target_q.detach())
 
         # Actor loss
-        actor_loss = -self.critic(states, self.actor(states)).mean()
+        #actor_loss = -self.critic(states, self.actor(states).detach()).mean()
+        predicted_actions = self.actor(states)
+        actor_loss = -self.critic(states, predicted_actions).mean()
 
         # Update critic
         self.critic_optimizer.zero_grad()
@@ -156,7 +193,7 @@ class DDPGAgent:
             critic_loss = nn.MSELoss()(current_q, target_q.detach())
 
             # Actor loss
-            actor_loss = -self.critic(states, self.actor(states)).mean()
+            actor_loss = -self.critic(states, self.actor(states).detach()).mean()
 
             # Update critic
             self.critic_optimizer.zero_grad()
@@ -224,14 +261,23 @@ class BilliardEnv:
             end_mass=cue_tip_mass,
         )
         self.cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
-
+    
         self.interp_v = interp1d((-1.0, 1.0), (1.0, 7.0), kind='linear', fill_value="extrapolate")
-        self.interp_phi = interp1d((-1.0, 1.0), (0, 2*np.pi), kind='linear', fill_value="extrapolate")
-        self.interp_theta = interp1d((-1.0, 1.0), (0.0, np.pi/2), kind='linear', fill_value="extrapolate")
+        self.interp_phi = interp1d((-1.0, 1.0), (0, 360), kind='linear', fill_value="extrapolate")
+        self.interp_theta = interp1d((-1.0, 1.0), (0.0, 90), kind='linear', fill_value="extrapolate")
         self.interp_a = interp1d((-1.0, 1.0), (-0.6, 0.6), kind='linear', fill_value="extrapolate")
         self.interp_b = interp1d((-1.0, 1.0), (-0.6, 0.6), kind='linear', fill_value="extrapolate")
+        
+        # rewards
+        point_distance_0 = (0, 2 * self.Rball * 0.7, 2 * self.Rball, 2 * self.Rball * 0.3, 0.2, 3)
+        reward_0 = (10, 10, 5, -5, -10, -50)
+
+        # Interpolation function
+        self.reward_point_distance = interp1d(point_distance_0, reward_0, kind='linear', fill_value="extrapolate")  
+
 
         self.reset()
+
 
     def reset(self):
         # Randomize ball positions within valid regions
@@ -287,35 +333,58 @@ class BilliardEnv:
 
     def get_state(self):
         # Calculate distances and directions
-        d_cue_to_2 = np.linalg.norm(np.array(self.ball1) - np.array(self.ball2))
-        d_cue_to_3 = np.linalg.norm(np.array(self.ball1) - np.array(self.ball3))
-        d_2_to_3 = np.linalg.norm(np.array(self.ball2) - np.array(self.ball3))
+        # all values must be normalized
+        # ball positions relative to table center
+        # distances scaled by table length
+        # angles by 360deg
+        # 
+        d_cue_to_2 = np.linalg.norm(np.array(self.ball1) - np.array(self.ball2)) / self.table_width
+        d_cue_to_3 = np.linalg.norm(np.array(self.ball1) - np.array(self.ball3)) / self.table_width
+        d_2_to_3 = np.linalg.norm(np.array(self.ball2) - np.array(self.ball3)) / self.table_width
 
         #print('Ersin-Line 233: Check the angle whether it is in table coordinate system')
-        phi_cue_to_2 = pt.aim.at_ball(self.system, "yellow", cut=0.0)
-        phi_cue_to_3 = pt.aim.at_ball(self.system, "red", cut=0.0)
-        phi_2_to_3 = np.arctan2(self.ball3[1] - self.ball2[1], self.ball3[0] - self.ball2[0])*180/np.pi
+        phi_cue_to_2 = pt.aim.at_ball(self.system, "yellow", cut=0.0) / 360
+        phi_cue_to_3 = pt.aim.at_ball(self.system, "red", cut=0.0) / 360
+        phi_2_to_3 = np.arctan2(self.ball3[1] - self.ball2[1], self.ball3[0] - self.ball2[0])*180/np.pi / 360
 
-        d_cushions_to_1 = [self.ball1[0]-self.Rball, self.table_width - self.ball1[1] - self.Rball,
-                      self.ball1[0] - self.Rball, self.table_height - self.ball1[0] - self.Rball]
-        d_cushions_to_2 = [self.ball2[0]-self.Rball, self.table_width - self.ball2[1] - self.Rball,
-                      self.ball2[0] - self.Rball, self.table_height - self.ball2[0] - self.Rball]
-        d_cushions_to_3 = [self.ball3[0]-self.Rball, self.table_width - self.ball3[1] - self.Rball,
-                      self.ball3[0] - self.Rball, self.table_height - self.ball3[0] - self.Rball]
+        d_cushions_to_1 = [(self.ball1[0]-self.Rball)/self.table_width, 
+                           (self.table_width - self.ball1[1] - self.Rball)/self.table_width,
+                           (self.ball1[0] - self.Rball)/self.table_width, 
+                           (self.table_height - self.ball1[0] - self.Rball)/self.table_width]
+        d_cushions_to_2 = [(self.ball2[0]-self.Rball)/self.table_width, 
+                           (self.table_width - self.ball2[1] - self.Rball)/self.table_width,
+                           (self.ball2[0] - self.Rball)/self.table_width, 
+                           (self.table_height - self.ball2[0] - self.Rball)/self.table_width]
+        d_cushions_to_3 = [(self.ball3[0]-self.Rball)/self.table_width, 
+                           (self.table_width - self.ball3[1] - self.Rball),
+                           (self.ball3[0] - self.Rball)/self.table_width, 
+                           (self.table_height - self.ball3[0] - self.Rball)/self.table_width]
 
+    
+    
         return np.array([*self.ball1, *self.ball2, *self.ball3, d_cue_to_2, phi_cue_to_2,
                          d_cue_to_3, phi_cue_to_3, d_2_to_3, phi_2_to_3, 
                          *d_cushions_to_1, *d_cushions_to_2, *d_cushions_to_3])
+    
+
+
+    def denormalize_action(self, action):
+        v_n, phi_n, theta_n, a_n, b_n = action  
+        
+        # Denormalize actions
+        v = self.interp_v(v_n)
+        phi = self.interp_phi(phi_n)
+        theta = self.interp_theta(theta_n)
+        a = self.interp_a(a_n)
+        b = self.interp_b(b_n)
+        
+        return v, phi, theta, a, b
+    
 
     def step(self, action):
         
-        v_n, phi_n, theta_n, a_n, b_n = action  
-        # Denormalize actions
-        v = self.interp_v(v_n)
-        phi = self.interp_phi(v_n)
-        theta = self.interp_theta(v_n)
-        a = self.interp_a(v_n)
-        b = self.interp_b(v_n)
+        v, phi, theta, a, b = self.denormalize_action(action)
+        print(f"  v=:{np.round(v,2)}, phi={np.round(phi,2)}, theta={np.round(theta,1)}, a={np.round(a,2)}, b={np.round(b,2)}")
 
         # Simulate shot using physics engine or model (implement this)
 
@@ -323,7 +392,7 @@ class BilliardEnv:
 
         self.simulate_shot()
         
-        reward = self.calculate_reward()
+        reward = self.calculate_shot_reward()
         
         # Track rewards for episode-based updates
         self.episode_rewards.append(reward)
@@ -333,12 +402,10 @@ class BilliardEnv:
 
         if self.is_point:
             self.series_length += 1
-            done = False
         else:
             self.series_length = 0
-            done = True
 
-        return next_state, reward, done
+        return next_state, reward, self.is_point
 
     def simulate_shot(self):
         system = self.system
@@ -346,22 +413,47 @@ class BilliardEnv:
         pt.simulate(system, inplace=True)
 
         self.ball1 = system.balls['white'].state.rvw[0,:2]
-        self.ball2 = system.balls['white'].state.rvw[0,:2]
-        self.ball3 = system.balls['white'].state.rvw[0,:2]
+        self.ball2 = system.balls['yellow'].state.rvw[0,:2]
+        self.ball3 = system.balls['red'].state.rvw[0,:2]
 
         self.is_point = is_point(system)
 
         pass
 
-    def calculate_reward(self):
+    def calculate_shot_reward(self):
+        # definition of the rewards
+        # point distance: +10 .. -30
+            # safe hit between (1.0 ball .. 0.25 ball) : +10
+            # thin hit/miss between (0.25 ball .. -0.5 ball): +10 ... (-10)
+            # big miss  (-0.5 ball .. 3m) : -10 .. -30
+        # b1 cushion count +1 per cushion, max 3 points
 
-        point_distance = self.eval_shot()
-        reward = self.point_distance_reward(point_distance)
- 
+        # Series    +5 per additional point
+
+
+        point_distance, b1_cushion_count, isb2hit = self.eval_shot()
+
+        # New points for interpolation
+        reward_pd = self.reward_point_distance(point_distance[0])
+        
+        reward_cushion = max(b1_cushion_count,3)
+        reward_b2hit = isb2hit*1
+
+        reward = reward_pd + reward_cushion + reward_b2hit
+
         return reward
 
-# Shot analysis
+
+    # Shot analysis
     def eval_shot(self):
+
+        # outputs:
+        # is_point
+        # is_hitb1b2
+        # b1_cushions
+        # point_distance
+
+
         shot = self.system
 
         def get_ball_order(shot):
@@ -371,6 +463,7 @@ class BilliardEnv:
             
             # identy b2 and b3.
             # if b1 hits only one ball, b2 is the ball which is hit by b1, b3 is the remaining ball
+            # Future task:
             # if b1 has no ball-ball event, b2 is the closest ball to b1 after 3 cushions, b3 is the remaining ball
 
             # get ball events of cue ball b1
@@ -382,13 +475,15 @@ class BilliardEnv:
                 b2 = [color for color in b1ballhits[0].ids if color != b1][0]
                 # remaining ball is b3
                 b3 = [color for color in ("white", "yellow", "red") if color not in (b1, b2)][0]
+                isb2hit = True
             else:
                 # no ball contact, so we define b1 and b2
                 # in future change it to the closest ball to the cueball after 3 cushions
                 b2 = [color for color in ("white", "yellow") if color != b1][0]
                 b3 = "red"
+                isb2hit = False
             
-            return [b1, b2, b3]
+            return [b1, b2, b3, isb2hit]
         
         def get_ball_events(shot):
             # collect all hits for each ball
@@ -495,11 +590,14 @@ class BilliardEnv:
 
             return hit_fraction
 
-        def cushion_count(shot):
+        def cushion_count(shot,bx):
             # count the cushion hits before b1 hits b3
-            # 
+            # get ball events of cue ball b1
+            events = filter_ball(shot.events, bx)
+            cushion_hits = filter_type(events, EventType.BALL_LINEAR_CUSHION)
+            n = len(cushion_hits)
 
-            return cushion_count
+            return n
         
         def kisses(shot):
             
@@ -542,7 +640,7 @@ class BilliardEnv:
                     point_time = event.time
                     hit_fraction = eval_hit_fraction(shot, event)
                     point_distance0 = hit_fraction*Rball
-                    print(point_distance0)
+                    #print(point_distance0)
                     break
 
             if cushion_hit_count >= 3 and b2_found >= 1:
@@ -614,7 +712,7 @@ class BilliardEnv:
 
         # START of evaluation
         # identify the balls cueball, objectball, targetball and store in ballorder
-        (b1, b2, b3) = get_ball_order(shot)
+        (b1, b2, b3, isb2hit) = get_ball_order(shot)
         #print(f"{b1=}, {b2=}, {b3=}")
 
         (b1hit, b2hit, b3hit) = get_ball_events(shot)
@@ -622,46 +720,44 @@ class BilliardEnv:
         
         (b1b2dist, b1b3dist, b2b3dist) = ball_ball_distances()
         # calculate point distances
+        b1_cushion_count = cushion_count(shot, b1)
         point_distance = eval_point_distance(shot)
-        print(f"{point_distance[0]=}")
+        print(f"  {point_distance[0]=}")
 
-        return point_distance
 
-    def point_distance_reward(self, point_distance):
-        
-        point_distance_0 = (0, 2 * self.Rball * 0.7, 2 * self.Rball, 2 * self.Rball * 0.3, 0.2, 3)
-        reward_0 = (10, 10, 5, -5, -10, -50)
-
-        # Interpolation function
-        interpolator = interp1d(point_distance_0, reward_0, kind='linear', fill_value="extrapolate")  
-        
-        # New points for interpolation
-        reward = interpolator(point_distance[0])
-        
-        return reward
+        return point_distance, b1_cushion_count, isb2hit
 
     
 env = BilliardEnv()
 agent = DDPGAgent(STATE_DIM, ACTION_DIM)
 
-
 num_episodes = 1000
 max_steps = 200  # Max steps per episode
+highscore = 0
+highscore_reward = 10
+rewardrecord = 0
+rewardrecord_reward = 10
 
 for episode in range(num_episodes):
+    print(f"Episode {episode}, ....")
     state = env.reset()
     episode_trajectory = []  # Store transitions for episode-based updates
-    highscore = 0
-    highscore_reward = 10
+
     total_reward = 0
     score = 0
 
     for step in range(max_steps):
         # Select an action
         action = agent.select_action(state)
-        print(f"Step: {step}, :{action}")
+        
         # Step in the environment
-        next_state, reward, done = env.step(action)
+        next_state, reward, ispoint = env.step(action)
+        done = not ispoint
+
+        print(f"  Step {step}, Step Reward: {reward}, Total reward:{total_reward}")
+
+        # Open up the shot in the GUI
+        #pt.show(env.system)
 
         # Store the transition for episode-based updates
         episode_trajectory.append((state, action, reward, next_state, done))
@@ -672,20 +768,26 @@ for episode in range(num_episodes):
         # Update state and accumulate episode reward
         state = next_state
  
-        if done:
+        if ispoint:
+            # scored, episode to continue
+            score += 1
+            total_reward += reward
+        
+        else:
+            # missed, episode to end
             if score > highscore:
                 highscore = score
                 total_reward += highscore_reward
+            if total_reward > rewardrecord:
+                rewardrecord_reward = total_reward
+                total_reward += rewardrecord_reward
 
             break
-        else:
-            score += 1
-            total_reward += reward
-
 
     # Episode-Based Update (end of episode)
-
-    print(f"Episode {episode}, Step Reward: {reward}, Episode Reward: {total_reward}")
-    agent.train_episode(episode_trajectory, total_reward)
+    if score > 0:
+        print(f"Episode Reward: {total_reward}")
+        agent.train_episode(episode_trajectory, total_reward)
+        episode_trajectory = []
 
 
