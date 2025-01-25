@@ -13,10 +13,11 @@ ypos = (0.71, 0.71)  # Yellow
 rpos = (0.71, 2.13)  # Red
 
 # shot props
-sidespin = 0.0
-vertspin = 0.238
-cuespeed = 6.817
-cutangle = 47.767
+sidespin = 0.009
+vertspin = 0.06
+cuespeed = 8.7
+cutangle = -37
+cueincline = 3.6
 
 # define the properties
 u_slide = 0.15
@@ -82,7 +83,7 @@ system_template = pt.System(
 system = system_template.copy()
 
 phi = pt.aim.at_ball(system, "red", cut=cutangle)
-system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin)
+system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin, theta=cueincline)
 
 # Evolve the shot.
 pt.simulate(system, inplace=True)

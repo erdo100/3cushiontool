@@ -9,178 +9,10 @@ from scipy.signal import argrelextrema
 from scipy.interpolate import interp1d
 import time
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from collections import deque
 import random
 
-# Hyperparameters
-STATE_DIM = 24  # Input size (positions, distances, directions, etc.)
-ACTION_DIM = 5  # Output size (v, phi, theta, a, b)
-ACTOR_LR = 1e-4
-CRITIC_LR = 1e-3
-GAMMA = 0.99
-TAU = 0.005  # For soft updates
-BUFFER_SIZE = int(1e6)
-BATCH_SIZE = 64
-
-# Actor Network
-class Actor(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(Actor, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.out = nn.Linear(256, action_dim)  # Outputs continuous action values
-
-    def forward(self, state):
-        x = torch.relu(self.fc1(state))
-        x = torch.relu(self.fc2(x))
-        return torch.tanh(self.out(x))  # Actions in [-1, 1]
-
-# Critic Network
-class Critic(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(Critic, self).__init__()
-        self.fc1 = nn.Linear(state_dim + action_dim, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.out = nn.Linear(256, 1)  # Outputs Q-value
-
-    def forward(self, state, action):
-        x = torch.cat([state, action], dim=1)  # Concatenate state and action
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        return self.out(x)
-
-# Replay Buffer
-class ReplayBuffer:
-    def __init__(self, max_size):
-        self.buffer = deque(maxlen=max_size)
-
-    def add(self, state, action, reward, next_state, done):
-        self.buffer.append((state, action, reward, next_state, done))
-
-    def sample(self, batch_size):
-        batch = random.sample(self.buffer, batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
-        return (torch.tensor(states, dtype=torch.float32),
-                torch.tensor(actions, dtype=torch.float32),
-                torch.tensor(rewards, dtype=torch.float32),
-                torch.tensor(next_states, dtype=torch.float32),
-                torch.tensor(dones, dtype=torch.float32))
-
-    def size(self):
-        return len(self.buffer)
-
-
-class DDPGAgent:
-    def __init__(self, state_dim, action_dim):
-        self.actor = Actor(state_dim, action_dim)
-        self.actor_target = Actor(state_dim, action_dim)
-        self.critic = Critic(state_dim, action_dim)
-        self.critic_target = Critic(state_dim, action_dim)
-
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=ACTOR_LR)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=CRITIC_LR)
-        self.replay_buffer = ReplayBuffer(BUFFER_SIZE)
-
-        # Initialize target networks with same weights
-        self.actor_target.load_state_dict(self.actor.state_dict())
-        self.critic_target.load_state_dict(self.critic.state_dict())
-
-    def select_action(self, state, noise=0.1):
-        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
-        action = self.actor(state).detach().numpy()[0]
-        action += noise * np.random.normal(size=action.shape)  # Add exploration noise
-        return np.clip(action, -1, 1)
-
-    def train_step(self, state, action, reward, next_state, done):
-        """
-        Stepwise update: Train the agent immediately after collecting a transition.
-        """
-        # Store transition in replay buffer
-        self.replay_buffer.add(state, action, reward, next_state, done)
-
-        # Ensure enough samples in buffer for training
-        if self.replay_buffer.size() < BATCH_SIZE:
-            return
-
-        # Sample a batch from the replay buffer
-        states, actions, rewards, next_states, dones = self.replay_buffer.sample(BATCH_SIZE)
-
-        # Critic loss
-        next_actions = self.actor_target(next_states)
-        target_q = rewards + GAMMA * self.critic_target(next_states, next_actions) * (1 - dones)
-        current_q = self.critic(states, actions)
-        critic_loss = nn.MSELoss()(current_q, target_q.detach())
-
-        # Actor loss
-        actor_loss = -self.critic(states, self.actor(states)).mean()
-
-        # Update critic
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
-
-        # Update actor
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        self.actor_optimizer.step()
-
-        # Soft update target networks
-        self.soft_update(self.actor, self.actor_target)
-        self.soft_update(self.critic, self.critic_target)
-
-    def train_episode(self, episode_trajectory, episode_reward):
-        """
-        Episode-based update: Train the agent at the end of an episode.
-        """
-        # Store the entire trajectory in the replay buffer
-        for transition in episode_trajectory:
-            state, action, reward, next_state, done = transition
-            self.replay_buffer.add(state, action, reward, next_state, done)
-
-        # Perform multiple training steps (often equal to the episode length)
-        for _ in range(len(episode_trajectory)):
-            if self.replay_buffer.size() < BATCH_SIZE:
-                return
-
-            # Sample a batch from the replay buffer
-            states, actions, rewards, next_states, dones = self.replay_buffer.sample(BATCH_SIZE)
-
-            # Critic loss
-            next_actions = self.actor_target(next_states)
-            target_q = rewards + GAMMA * self.critic_target(next_states, next_actions) * (1 - dones)
-            current_q = self.critic(states, actions)
-            critic_loss = nn.MSELoss()(current_q, target_q.detach())
-
-            # Actor loss
-            actor_loss = -self.critic(states, self.actor(states)).mean()
-
-            # Update critic
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            self.critic_optimizer.step()
-
-            # Update actor
-            self.actor_optimizer.zero_grad()
-            actor_loss.backward()
-            self.actor_optimizer.step()
-
-            # Soft update target networks
-            self.soft_update(self.actor, self.actor_target)
-            self.soft_update(self.critic, self.critic_target)
-
-    def soft_update(self, net, target_net):
-        """
-        Soft update of the target network using TAU.
-        """
-        for target_param, param in zip(target_net.parameters(), net.parameters()):
-            target_param.data.copy_(TAU * param.data + (1 - TAU) * target_param.data)
-
-
 class BilliardEnv:
-    def __init__(self):
+    def __init__(self, shotnums, var_stddev):
         self.table_width = 2.84  # Table dimensions (meters)
         self.table_height = 1.42
         self.series_length = 0
@@ -210,6 +42,7 @@ class BilliardEnv:
         cue_tip_R = 0.022
         cue_tip_mass = 0.0000001
 
+
         # Build a table with default BILLIARD specs
         self.table = pt.Table.default(pt.TableType.BILLIARD)
 
@@ -224,23 +57,27 @@ class BilliardEnv:
         )
         self.cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
 
+        self.shotnums = shotnums
+        self.interp_a = interp1d((-1.0, 1.0), (-0.5, 0.5), kind='linear', fill_value="extrapolate")
+        self.interp_b = interp1d((-1.0, 1.0), (-0.5, 0.5), kind='linear', fill_value="extrapolate")
         self.interp_v = interp1d((-1.0, 1.0), (1.0, 7.0), kind='linear', fill_value="extrapolate")
-        self.interp_phi = interp1d((-1.0, 1.0), (0, 2*np.pi), kind='linear', fill_value="extrapolate")
-        self.interp_theta = interp1d((-1.0, 1.0), (0.0, np.pi/2), kind='linear', fill_value="extrapolate")
-        self.interp_a = interp1d((-1.0, 1.0), (-0.6, 0.6), kind='linear', fill_value="extrapolate")
-        self.interp_b = interp1d((-1.0, 1.0), (-0.6, 0.6), kind='linear', fill_value="extrapolate")
+        self.interp_cut = interp1d((-1.0, 1.0), (-89, 89), kind='linear', fill_value="extrapolate")
+        self.interp_theta = interp1d((-1.0, 1.0), (0.0, 10), kind='linear', fill_value="extrapolate")
 
         self.reset()
 
+        (stddev_sidespin, stddev_vertspin, stddev_cuespeed, stddev_cutangle, cstddev_cueincline) = var_stddev
+        # Generate random scatter of balls
+        # generate shot props from new mean values
+        self.delta_sidespin = np.random.normal(loc=0, scale=stddev_sidespin, size=shotnums)
+        self.delta_vertspin = np.random.normal(loc=0, scale=stddev_vertspin, size=shotnums)
+        self.delta_cuespeed = np.random.normal(loc=0, scale=stddev_cuespeed, size=shotnums)
+        self.delta_cutangle = np.random.normal(loc=0, scale=stddev_cutangle, size=shotnums)
+        self.delta_cueincline = np.random.normal(loc=0, scale=cstddev_cueincline, size=shotnums)
+
+
     def reset(self):
-        # Randomize ball positions within valid regions
-        # self.ball1 = np.random.uniform(
-        #     [self.Rball, self.Rball], [self.table_width - self.Rball, self.table_height - self.Rball])
-        # self.ball2 = np.random.uniform(
-        #     [self.Rball, self.Rball], [self.table_width - self.Rball, self.table_height - self.Rball])
-        # self.ball3 = np.random.uniform(
-        #     [self.Rball, self.Rball], [self.table_width - self.Rball, self.table_height - self.Rball])
-    
+
         # start from Position from init
         self.ball1 = self.ball1_ini
         self.ball2 = self.ball2_ini
@@ -250,11 +87,11 @@ class BilliardEnv:
         self.current_step = 0
         self.episode_rewards = []
 
-        state = self.prepare_new_shot(3.0, 50, 0., 0., 0.)
+        state = self.prepare_new_shot(0., 0,3.0, 50, 0.)
 
         return state
 
-    def prepare_new_shot(self, v, phi, theta, a, b):
+    def prepare_new_shot(self, a, b, v, phi, theta):
 
         # Create balls in new positions
         wball = pt.Ball.create("white", xy=self.ball1, m=self.mball, R=self.Rball,
@@ -274,11 +111,11 @@ class BilliardEnv:
                     u_sp_proportionality=self.u_sp_prop, u_b=self.u_ballball,
                     e_b=self.e_ballball, e_c=self.e_cushion,
                     f_c=self.f_cushion, g=self.grav)
-        
 
+        # set the cue
+        self.cue.set_state(a=a, b=b, V0=v, phi=phi, theta = theta)
 
         # Wrap it up as a System
-        self.cue.set_state(V0=v, phi=phi, theta = theta, a=a, b=b)
         self.system = pt.System(table=self.table, balls=(wball, yball, rball), cue=self.cue)
 
         state = self.get_state()
@@ -308,17 +145,17 @@ class BilliardEnv:
 
     def step(self, action):
         
-        v_n, phi_n, theta_n, a_n, b_n = action  
+        a_n, b_n, v_n, phi_n, theta_n = action
         # Denormalize actions
-        v = self.interp_v(v_n)
-        phi = self.interp_phi(v_n)
-        theta = self.interp_theta(v_n)
         a = self.interp_a(v_n)
         b = self.interp_b(v_n)
+        v = self.interp_v(v_n)
+        cut = self.interp_cut(v_n)
+        theta = self.interp_theta(v_n)
 
         # Simulate shot using physics engine or model (implement this)
 
-        self.prepare_new_shot(v, phi, theta, a, b)
+        self.prepare_new_shot(a, b, v, cut, theta)
 
         self.simulate_shot()
         
@@ -341,7 +178,7 @@ class BilliardEnv:
 
     def simulate_shot(self):
         system = self.system
-        # run the phsics model
+        # run the physics model
         pt.simulate(system, inplace=True)
 
         self.ball1 = system.balls['white'].state.rvw[0,:2]
@@ -359,7 +196,73 @@ class BilliardEnv:
  
         return reward
 
-# Shot analysis
+    def denormalize(self, action):
+        a_n, b_n, v_n, phi_n, theta_n = action
+        a = self.interp_a(a_n)
+        b = self.interp_b(b_n)
+        v = self.interp_v(v_n)
+        phi = self.interp_cut(phi_n)
+        theta = self.interp_theta(theta_n)
+
+        return [a, b, v, phi, theta]
+
+    def shot_randomize(self, vars):
+
+        # denormalize the variables
+        sidespin_avg, vertspin_avg, cuespeed_avg, cutangle_avg, cueincline_avg = self.denormalize(vars)
+
+        # Initialize an empty list to store angles
+        sidespin = sidespin_avg + self.delta_sidespin
+        vertspin = vertspin_avg + self.delta_vertspin
+        cuespeed = cuespeed_avg + self.delta_cuespeed
+        cutangle = cutangle_avg + self.delta_cutangle
+        cueincline = cueincline_avg + self.delta_cueincline
+
+        # reward = 0
+        shots = 0
+        points = 0
+        for i in range(self.shotnums):
+            # Creates a deep copy of the template
+
+
+            # check if shot is inside of squirt limit. If so, simulate the shot
+            # This will ensure R^2 - a^2 - b^2 >= 0
+            if 0.6 ** 2 >= (sidespin.item(i) ** 2 + vertspin.item(i) ** 2) and \
+                    -89 <= cutangle.item(i) <= 89 and 0 <= cueincline.item(i) <= 90:
+                phi = pt.aim.at_ball(self.system, "red", cut=cutangle.item(i))
+
+                self.cue.set_state(a=sidespin.item(i), b=vertspin.item(i), V0=cuespeed.item(i), phi=phi, theta=cueincline.item(i))
+                self.system.reset_balls()
+
+                # Evolve the shot.
+                pt.simulate(self.system, inplace=True)
+                shots += 1
+                points += is_point(self.system)
+                # reward += self.calculate_reward()
+            else:
+                ccc=1
+
+        successrate = points / self.shotnums
+
+        print(f"ss=", np.round(sidespin_avg, 3),
+              ", vs=", np.round(vertspin_avg, 3),
+              ", speed=", np.round(cuespeed_avg, 3),
+              ", cut=", np.round(cutangle_avg, 3),
+              ", incline=", np.round(cueincline_avg, 3),
+              ", total shots=", np.round(shots, 1),
+              ", success=", np.round(successrate * 100, 3))
+
+        print(f"ss=", np.round(sidespin_avg_n, 3),
+              ", vs=", np.round(vertspin_avg_n, 3),
+              ", speed=", np.round(cuespeed_avg_n, 3),
+              ", cut=", np.round(cutangle_avg_n, 3),
+              ", incline=", np.round(cueincline_avg_n, 3)) #,
+              #", reward=", np.round(reward, 3))
+
+        return successrate
+
+
+    # Shot analysis
     def eval_shot(self):
         shot = self.system
 
@@ -541,7 +444,7 @@ class BilliardEnv:
                     point_time = event.time
                     hit_fraction = eval_hit_fraction(shot, event)
                     point_distance0 = hit_fraction*Rball
-                    print(point_distance0)
+                    # print(point_distance0)
                     break
 
             if cushion_hit_count >= 3 and b2_found >= 1:
@@ -622,7 +525,7 @@ class BilliardEnv:
         (b1b2dist, b1b3dist, b2b3dist) = ball_ball_distances()
         # calculate point distances
         point_distance = eval_point_distance(shot)
-        print(f"{point_distance[0]=}")
+        # print(f"{point_distance[0]=}")
 
         return point_distance
 
@@ -638,53 +541,3 @@ class BilliardEnv:
         reward = interpolator(point_distance[0])
         
         return reward
-
-    
-env = BilliardEnv()
-agent = DDPGAgent(STATE_DIM, ACTION_DIM)
-
-
-num_episodes = 1000
-max_steps = 200  # Max steps per episode
-
-for episode in range(num_episodes):
-    state = env.reset()
-    episode_trajectory = []  # Store transitions for episode-based updates
-    highscore = 0
-    highscore_reward = 10
-    total_reward = 0
-    score = 0
-
-    for step in range(max_steps):
-        # Select an action
-        action = agent.select_action(state)
-        print(f"Step: {step}, :{action}")
-        # Step in the environment
-        next_state, reward, done = env.step(action)
-
-        # Store the transition for episode-based updates
-        episode_trajectory.append((state, action, reward, next_state, done))
-
-        # Stepwise Update (immediate)
-        agent.train_step(state, action, reward, next_state, done)
-
-        # Update state and accumulate episode reward
-        state = next_state
- 
-        if done:
-            if score > highscore:
-                highscore = score
-                total_reward += highscore_reward
-
-            break
-        else:
-            score += 1
-            total_reward += reward
-
-
-    # Episode-Based Update (end of episode)
-
-    print(f"Episode {episode}, Step Reward: {reward}, Episode Reward: {total_reward}")
-    agent.train_episode(episode_trajectory, total_reward)
-
-
