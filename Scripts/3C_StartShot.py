@@ -70,23 +70,31 @@ rball = pt.Ball.create("red", xy=rpos, m=mball, R=Rball,
               e_b=e_ballball, e_c=e_cushion,
               f_c=f_cushion, g=grav)
 
+# measure run time
+import time
+start = time.time()
 
-# Wrap it up as a System
-system_template = pt.System(
-    table=table,
-    balls=(wball, yball, rball),
-    # balls=balls,
-    cue=cue,
-)
+for _ in range(10000):
+    # Wrap it up as a System
+    system_template = pt.System(
+        table=table,
+        balls=(wball, yball, rball),
+        # balls=balls,
+        cue=cue,
+    )
 
-# Creates a deep copy of the template
-system = system_template.copy()
+    # Creates a deep copy of the template
+    system = system_template.copy()
 
-phi = pt.aim.at_ball(system, "red", cut=cutangle)
-system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin, theta=cueincline)
+    phi = pt.aim.at_ball(system, "red", cut=cutangle)
+    system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin, theta=cueincline)
 
-# Evolve the shot.
-pt.simulate(system, inplace=True)
+    # Evolve the shot.
+    pt.simulate(system, inplace=True)
+
+# execution time print out
+print("Execution time: ", time.time() - start)
+
 
 if is_point(system):
     print("Point: YES")

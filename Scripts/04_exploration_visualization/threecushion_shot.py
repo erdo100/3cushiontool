@@ -11,8 +11,21 @@ import time
 
 import random
 
+class Shots:
+    def __init__(self, b1pos, b2pos, b3pos, a, b, v, cut, incline, point):
+        self.b1pos = b1pos
+        self.b2pos = b2pos
+        self.b3pos = b3pos
+        self.a = a
+        self.b = b
+        self.v = v
+        self.cut = cut
+        self.incline = incline
+        self.point = point
+
+
 class BilliardEnv:
-    def __init__(self, shotnums, var_stddev):
+    def __init__(self):
         self.table_width = 2.84  # Table dimensions (meters)
         self.table_height = 1.42
         self.series_length = 0
@@ -57,103 +70,36 @@ class BilliardEnv:
         )
         self.cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
 
-        self.shotnums = shotnums
-        self.interp_a = interp1d((-1.0, 1.0), (-0.5, 0.5), kind='linear', fill_value="extrapolate")
-        self.interp_b = interp1d((-1.0, 1.0), (-0.5, 0.5), kind='linear', fill_value="extrapolate")
-        self.interp_v = interp1d((-1.0, 1.0), (1.0, 7.0), kind='linear', fill_value="extrapolate")
-        self.interp_cut = interp1d((-1.0, 1.0), (-89, 89), kind='linear', fill_value="extrapolate")
-        self.interp_theta = interp1d((-1.0, 1.0), (0.0, 10), kind='linear', fill_value="extrapolate")
-
-        self.reset()
-
-        (stddev_sidespin, stddev_vertspin, stddev_cuespeed, stddev_cutangle, cstddev_cueincline) = var_stddev
-        # Generate random scatter of balls
-        # generate shot props from new mean values
-        self.delta_sidespin = np.random.normal(loc=0, scale=stddev_sidespin, size=shotnums)
-        self.delta_vertspin = np.random.normal(loc=0, scale=stddev_vertspin, size=shotnums)
-        self.delta_cuespeed = np.random.normal(loc=0, scale=stddev_cuespeed, size=shotnums)
-        self.delta_cutangle = np.random.normal(loc=0, scale=stddev_cutangle, size=shotnums)
-        self.delta_cueincline = np.random.normal(loc=0, scale=cstddev_cueincline, size=shotnums)
-
-
-    def reset(self):
-
-        # start from Position from init
-        self.ball1 = self.ball1_ini
-        self.ball2 = self.ball2_ini
-        self.ball3 = self.ball3_ini
-        
-        self.series_length = 0
-        self.current_step = 0
-        self.episode_rewards = []
-
-        state = self.prepare_new_shot(0., 0,3.0, 50, 0.)
-
-        return state
-
-    def prepare_new_shot(self, a, b, v, phi, theta):
+    def prepare_new_shot(self, ball1xy, ball2xy, ball3xy, a, b, v, cut, theta):
 
         # Create balls in new positions
-        wball = pt.Ball.create("white", xy=self.ball1, m=self.mball, R=self.Rball,
+        wball = pt.Ball.create("white", xy=ball1xy, m=self.mball, R=self.Rball,
                     u_s=self.u_slide, u_r=self.u_roll, 
                     u_sp_proportionality=self.u_sp_prop, u_b=self.u_ballball,
                     e_b=self.e_ballball, e_c=self.e_cushion,
                     f_c=self.f_cushion, g=self.grav)
 
-        yball = pt.Ball.create("yellow", xy=self.ball2, m=self.mball, R=self.Rball,
+        yball = pt.Ball.create("yellow", xy=ball3xy, m=self.mball, R=self.Rball,
                     u_s=self.u_slide, u_r=self.u_roll, 
                     u_sp_proportionality=self.u_sp_prop, u_b=self.u_ballball,
                     e_b=self.e_ballball, e_c=self.e_cushion,
                     f_c=self.f_cushion, g=self.grav)
         
-        rball = pt.Ball.create("red", xy=self.ball3, m=self.mball, R=self.Rball,
+        rball = pt.Ball.create("red", xy=ball2xy, m=self.mball, R=self.Rball,
                     u_s=self.u_slide, u_r=self.u_roll, 
                     u_sp_proportionality=self.u_sp_prop, u_b=self.u_ballball,
                     e_b=self.e_ballball, e_c=self.e_cushion,
                     f_c=self.f_cushion, g=self.grav)
-
-        # set the cue
-        self.cue.set_state(a=a, b=b, V0=v, phi=phi, theta = theta)
 
         # Wrap it up as a System
         self.system = pt.System(table=self.table, balls=(wball, yball, rball), cue=self.cue)
 
-        state = self.get_state()
-        return state
+        phi = pt.aim.at_ball(self.system, "red", cut=cut)
+        # set the cue
+        self.cue.set_state(a=a, b=b, V0=v, phi=phi, theta=theta)
 
-    def get_state(self):
-        # Calculate distances and directions
-        d_cue_to_2 = np.linalg.norm(np.array(self.ball1) - np.array(self.ball2))
-        d_cue_to_3 = np.linalg.norm(np.array(self.ball1) - np.array(self.ball3))
-        d_2_to_3 = np.linalg.norm(np.array(self.ball2) - np.array(self.ball3))
-
-        #print('Ersin-Line 233: Check the angle whether it is in table coordinate system')
-        phi_cue_to_2 = pt.aim.at_ball(self.system, "yellow", cut=0.0)
-        phi_cue_to_3 = pt.aim.at_ball(self.system, "red", cut=0.0)
-        phi_2_to_3 = np.arctan2(self.ball3[1] - self.ball2[1], self.ball3[0] - self.ball2[0])*180/np.pi
-
-        d_cushions_to_1 = [self.ball1[0]-self.Rball, self.table_width - self.ball1[1] - self.Rball,
-                      self.ball1[0] - self.Rball, self.table_height - self.ball1[0] - self.Rball]
-        d_cushions_to_2 = [self.ball2[0]-self.Rball, self.table_width - self.ball2[1] - self.Rball,
-                      self.ball2[0] - self.Rball, self.table_height - self.ball2[0] - self.Rball]
-        d_cushions_to_3 = [self.ball3[0]-self.Rball, self.table_width - self.ball3[1] - self.Rball,
-                      self.ball3[0] - self.Rball, self.table_height - self.ball3[0] - self.Rball]
-
-        return np.array([*self.ball1, *self.ball2, *self.ball3, d_cue_to_2, phi_cue_to_2,
-                         d_cue_to_3, phi_cue_to_3, d_2_to_3, phi_2_to_3, 
-                         *d_cushions_to_1, *d_cushions_to_2, *d_cushions_to_3])
 
     def step(self, action):
-        
-        a_n, b_n, v_n, phi_n, theta_n = action
-        # Denormalize actions
-        a = self.interp_a(v_n)
-        b = self.interp_b(v_n)
-        v = self.interp_v(v_n)
-        cut = self.interp_cut(v_n)
-        theta = self.interp_theta(v_n)
-
-        # Simulate shot using physics engine or model (implement this)
 
         self.prepare_new_shot(a, b, v, cut, theta)
 
@@ -161,33 +107,16 @@ class BilliardEnv:
         
         reward = self.calculate_reward()
         
-        # Track rewards for episode-based updates
-        self.episode_rewards.append(reward)
-        
-        # Update state and check if the episode is done
-        next_state = self.get_state()
-
-        if self.is_point:
-            self.series_length += 1
-            done = False
-        else:
-            self.series_length = 0
-            done = True
-
-        return next_state, reward, done
 
     def simulate_shot(self):
-        system = self.system
         # run the physics model
-        pt.simulate(system, inplace=True)
+        point = 0
+        pt.simulate(self.system, inplace=True)
 
-        self.ball1 = system.balls['white'].state.rvw[0,:2]
-        self.ball2 = system.balls['white'].state.rvw[0,:2]
-        self.ball3 = system.balls['white'].state.rvw[0,:2]
+        if is_point(self.system):
+            point = 1
 
-        self.is_point = is_point(system)
-
-        pass
+        return point
 
     def calculate_reward(self):
 
@@ -196,63 +125,28 @@ class BilliardEnv:
  
         return reward
 
-    def denormalize(self, action):
-        a_n, b_n, v_n, phi_n, theta_n = action
-        a = self.interp_a(a_n)
-        b = self.interp_b(b_n)
-        v = self.interp_v(v_n)
-        phi = self.interp_cut(phi_n)
-        theta = self.interp_theta(theta_n)
+    def shot_all(self, shots):
 
-        return [a, b, v, phi, theta]
+        points = np.zeros(len(shots.a))
+        for i in range(len(shots.a)):
 
-    def shot_randomize(self, vars):
-
-        # denormalize the variables
-        sidespin_avg, vertspin_avg, cuespeed_avg, cutangle_avg, cueincline_avg = self.denormalize(vars)
-
-        # Initialize an empty list to store angles
-        sidespin = sidespin_avg + self.delta_sidespin
-        vertspin = vertspin_avg + self.delta_vertspin
-        cuespeed = cuespeed_avg + self.delta_cuespeed
-        cutangle = cutangle_avg + self.delta_cutangle
-        cueincline = cueincline_avg + self.delta_cueincline
-
-        # reward = 0
-        shots = 0
-        points = 0
-        for i in range(self.shotnums):
-            # Creates a deep copy of the template
-
+            self.prepare_new_shot(self, shots, i)
 
             # check if shot is inside of squirt limit. If so, simulate the shot
             # This will ensure R^2 - a^2 - b^2 >= 0
-            if 0.6 ** 2 >= (sidespin.item(i) ** 2 + vertspin.item(i) ** 2) and \
-                    -89 <= cutangle.item(i) <= 89 and 0 <= cueincline.item(i) <= 90:
-                phi = pt.aim.at_ball(self.system, "red", cut=cutangle.item(i))
+            if 0.6 ** 2 >= (shots.a[i] ** 2 + shots.b[i] ** 2) and \
+                    -89 <= shots.cut[i] <= 89 and 0 <= shots.inc[i] <= 90:
 
-                self.cue.set_state(a=sidespin.item(i), b=vertspin.item(i), V0=cuespeed.item(i), phi=phi, theta=cueincline.item(i))
-                self.system.reset_balls()
+                phi = pt.aim.at_ball(self.system, "red", cut=shots.cut[i])
+
+                self.cue.set_state(a=shots.a[i], b=shots.b[i], V0=shots.v[i], phi=phi, theta=shots.incline[i])
 
                 # Evolve the shot.
                 pt.simulate(self.system, inplace=True)
-                shots += 1
-                points += is_point(self.system)
-                # reward += self.calculate_reward()
-            else:
-                ccc=1
 
-        successrate = points / self.shotnums
+                points[i] = is_point(self.system)
 
-        print(f"ss=", np.round(sidespin_avg, 3),
-              ", vs=", np.round(vertspin_avg, 3),
-              ", speed=", np.round(cuespeed_avg, 3),
-              ", cut=", np.round(cutangle_avg, 3),
-              ", incline=", np.round(cueincline_avg, 3),
-              ", total shots=", np.round(shots, 1),
-              ", success=", np.round(successrate * 100, 3))
-
-        return successrate
+        return points
 
 
     # Shot analysis
