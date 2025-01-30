@@ -13,11 +13,11 @@ ypos = (0.71, 0.71)  # Yellow
 rpos = (0.71, 2.13)  # Red
 
 # shot props
-sidespin = 0.009
-vertspin = 0.06
-cuespeed = 8.7
-cutangle = -37
-cueincline = 3.6
+sidespin = -0.4308085
+vertspin = -0.08185337
+cuespeed = 3.5
+cutangle = -0.1000594
+cueincline = 0
 
 # define the properties
 u_slide = 0.15
@@ -70,30 +70,23 @@ rball = pt.Ball.create("red", xy=rpos, m=mball, R=Rball,
               e_b=e_ballball, e_c=e_cushion,
               f_c=f_cushion, g=grav)
 
-# measure run time
-import time
-start = time.time()
 
-for _ in range(10000):
-    # Wrap it up as a System
-    system_template = pt.System(
-        table=table,
-        balls=(wball, yball, rball),
-        # balls=balls,
-        cue=cue,
-    )
+# Wrap it up as a System
+system_template = pt.System(
+    table=table,
+    balls=(wball, yball, rball),
+    # balls=balls,
+    cue=cue,
+)
 
-    # Creates a deep copy of the template
-    system = system_template.copy()
+# Creates a deep copy of the template
+system = system_template.copy()
 
-    phi = pt.aim.at_ball(system, "red", cut=cutangle)
-    system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin, theta=cueincline)
+phi = pt.aim.at_ball(system, "red", cut=cutangle)
+system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin, theta=cueincline)
 
-    # Evolve the shot.
-    pt.simulate(system, inplace=True)
-
-# execution time print out
-print("Execution time: ", time.time() - start)
+# Evolve the shot.
+pt.simulate(system, inplace=True)
 
 
 if is_point(system):
