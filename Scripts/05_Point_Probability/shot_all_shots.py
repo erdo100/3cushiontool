@@ -10,6 +10,60 @@ from matplotlib.widgets import Slider, RadioButtons
 import time
 import numba as nb
 from numba import prange
+import multiprocessing
+from multiprocessing import Pool
+from sobol_seq import i4_sobol_generate
+
+
+# Define these at the top level for pickling
+def init_worker():
+    global worker_env
+    from threecushion_shot import BilliardEnv  # Import inside to avoid pickling issues
+    worker_env = BilliardEnv()
+
+
+def process_sample(sample):
+    a, b, cut = sample
+    try:
+        # Fixed parameters directly in the function
+        worker_env.prepare_new_shot(
+            (0.5275, 0.71), (0.71, 0.71), (0.71, 2.13),
+            a, b, 3.5, cut, 0
+        )
+        return worker_env.simulate_shot()
+    except Exception as e:
+        print(f"Error processing sample {sample}: {e}")
+        return -1
+
+
+def run_optimized_simulation(resolution):
+    problem = {
+        'num_vars': 3,
+        'names': ['side', 'vert', 'cut'],
+        'bounds': [[-0.5, 0.5], [-0.5, 0.5], [-89, 89]]
+    }
+
+    runs = resolution * (2 * 3 + 2)
+    method = 'Sobol'
+
+    if method == 'Sobol':
+        samples = i4_sobol_generate(problem['num_vars'], resolution)
+        samples = samples * (np.array([0.5, 0.5, 89]) - np.array([-0.5, -0.5, -89])) + np.array([-0.5, -0.5, -89])
+    elif method == 'UniformRandom':
+        samples = np.random.uniform(low=[-0.5, -0.5, -89], high=[0.5, 0.5, 89], size=(runs, 3))
+
+    shots_df = pd.DataFrame(samples, columns=problem['names'])
+    samples_list = [tuple(row) for row in samples]
+
+
+    with Pool(processes=multiprocessing.cpu_count(), initializer=init_worker) as pool:
+        results = pool.map(process_sample, samples_list, chunksize=1000)
+
+    shots_df['point'] = results
+
+    shots_df.to_parquet("2_17_shots_optimized.parquet")
+    return shots_df
+
 
 def calculate_probability_map_old(
         df: pd.DataFrame,
@@ -56,9 +110,6 @@ def calculate_probability_map_old(
     mesh = np.meshgrid(*grid_axes, indexing='ij')
     total_probability = np.zeros_like(mesh[0], dtype=np.float64)
 
-    # start timing speed
-    start = time.time()
-
     # Loop over all mesh grid points
     for idx in np.ndindex(mesh[0].shape):
         # Compute combined mask for 3 sigma ranges
@@ -92,9 +143,6 @@ def calculate_probability_map_old(
 
         total_probability[idx] = np.sum(P * results)
 
-    # print runtime
-    print("Runtime of the program is", time.time() - start)
-
     # Save to Parquet
     grid_coords = {f"{var}_grid": grid.flatten() for var, grid in zip(variables, mesh)}
     grid_coords["total_probability"] = total_probability.flatten()
@@ -109,6 +157,7 @@ def calculate_probability_map(
         result_col: str,
         stddev_dict: dict,
         steps: float,
+        filename: str,
 ) -> tuple:
     # Input validation (same as before)
     missing_vars = [var for var in variables if var not in df.columns]
@@ -169,7 +218,7 @@ def calculate_probability_map(
     # Save to Parquet (same as before)
     grid_coords = {f"{var}_grid": grid.flatten() for var, grid in zip(variables, mesh)}
     grid_coords["total_probability"] = total_probability.flatten()
-    pd.DataFrame(grid_coords).to_parquet("total_probability.parquet")
+    pd.DataFrame(grid_coords).to_parquet(filename)
 
     return grid_axes, total_probability
 
@@ -397,116 +446,128 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
     plt.show()
 
 
-runsims = False
-calculate_density = True
+if __name__ == "__main__":
 
-if runsims == True:
-    # Define the problem: 4 variables, each with 3 levels
-    problem = {
-        'num_vars': 3,
-        'names': ['side', 'vert', 'cut'],  # Names for the variables
-        # Bounds for each variable
-        'bounds': [[-0.5, 0.5], # a
-                   [-0.5, 0.5], # b
-                   #[2, 7],      # velocity
-                   [-89, 89]    # cut angle
-                   ]
-    }
+    runsims = True
+    calculate_density = True
+    resolution = 2 ** 18
+    filebase = "2_18_shots"
+    filename_results = filebase + "_results.parquet"
+    filename_probability = filebase + "_probability.parquet"
+
+    if runsims == True:
+        # start timing
+        start = time.time()
+
+        if True:
+            shots_df = run_optimized_simulation(resolution)
+
+            shots_df.to_parquet(filename_results)
 
 
-    resolution = 2**17
-    runs = resolution*(2*3+2)
-    method = 'Sobol'
-    # method = 'UniformRandom'
+        else:
+            # Define the problem: 4 variables, each with 3 levels
+            problem = {
+                'num_vars': 3,
+                'names': ['side', 'vert', 'cut'],  # Names for the variables
+                # Bounds for each variable
+                'bounds': [[-0.5, 0.5], # a
+                           [-0.5, 0.5], # b
+                           #[2, 7],      # velocity
+                           [-89, 89]    # cut angle
+                           ]
+            }
 
-    if method == 'Sobol':
-        # Generate the Sobol design using Sobol sampling
-        samples = sobol.sample(problem, resolution)
 
-    elif method == 'UniformRandom':
-        # Generate random uniform samples within the bounds for each variable
-        samples = np.random.uniform(
-            low=[-0.5, -0.5, -89],  # Lower bounds for each variable
-            high=[0.5, 0.5, 89],     # Upper bounds for each variable
-            size=(runs, problem['num_vars'])  # Number of samples and variables
+
+            runs = resolution*(2*3+2)
+            method = 'Sobol'
+            # method = 'UniformRandom'
+
+            if method == 'Sobol':
+                # Generate the Sobol design using Sobol sampling
+                samples = sobol.sample(problem, resolution)
+
+            elif method == 'UniformRandom':
+                # Generate random uniform samples within the bounds for each variable
+                samples = np.random.uniform(
+                    low=[-0.5, -0.5, -89],  # Lower bounds for each variable
+                    high=[0.5, 0.5, 89],     # Upper bounds for each variable
+                    size=(runs, problem['num_vars'])  # Number of samples and variables
+                )
+
+
+            # Convert to a pandas DataFrame for easier inspection
+            shots_df = pd.DataFrame(samples, columns=problem['names'])
+
+            # Print the size (number of samples and number of variables)
+            print("Size of the samples array:", samples.shape)
+
+            env = BilliardEnv()
+
+            for i in range(runs):
+                a = shots_df.loc[i, 'side']
+                b = shots_df.loc[i, 'vert']
+                v = 3.5
+                cut = shots_df.loc[i, 'cut']
+                theta = 0
+
+                ball1xy = (0.5275, 0.71)
+                ball2xy = (0.71, 0.71)
+                ball3xy = (0.71, 2.13)
+
+                env.prepare_new_shot(ball1xy, ball2xy, ball3xy, a, b, v, cut, theta)
+
+                point = env.simulate_shot()
+                shots_df.at[i, 'point'] = point
+
+                if (i+1) % 200000 == 0:
+                    print((time.time() - start)/3600,"h: ", i ," runs")
+                    filtered_df = shots_df[shots_df['point'] == 1]
+                    # Create an interactive 3D scatter plot
+                    fig = px.scatter_3d(filtered_df, x='side', y='cut', z='vert', title="Total runs=" + str(i))
+                    fig.show()
+
+
+            # Speichern im Parquet-Format
+            shots_df.to_parquet("2_12_shots.parquet")
+            print('Dataframe saved to parquet file')
+
+        # print runtime
+        print("Runtime of run_optimized_simulation is", time.time() - start)
+
+    if calculate_density == True:
+        # Laden aus der Parquet-Datei
+        shots_df = pd.read_parquet(filename_results)
+
+        # start timing
+        start = time.time()
+
+        # Compute density
+        grid_axes, total_probability = calculate_probability_map(
+            df=shots_df,
+            variables=['side', 'vert', 'cut'],
+            result_col='point',
+            stddev_dict={'side': 0.02, 'vert': 0.02, 'cut': 3},
+            steps=100,
+            filename=filename_probability,
         )
 
+        # print runtime
+        print("Runtime of calculate_probability_map is", time.time() - start)
 
-    # Convert to a pandas DataFrame for easier inspection
-    shots_df = pd.DataFrame(samples, columns=problem['names'])
-
-    # Print the size (number of samples and number of variables)
-    print("Size of the samples array:", samples.shape)
-
-
-    env = BilliardEnv()
-
-    # start measure runtime
-    import time
-    start = time.time()
-
-    for i in range(runs):
-        a = shots_df.loc[i, 'side']
-        b = shots_df.loc[i, 'vert']
-        v = 3.5
-        cut = shots_df.loc[i, 'cut']
-        theta = 0
-
-        ball1xy = (0.5275, 0.71)
-        ball2xy = (0.71, 0.71)
-        ball3xy = (0.71, 2.13)
-
-        env.prepare_new_shot(ball1xy, ball2xy, ball3xy, a, b, v, cut, theta)
-
-        point = env.simulate_shot()
-        shots_df.at[i, 'point'] = point
-
-        if (i+1) % 200000 == 0:
-            print((time.time() - start)/3600,"h: ", i ," runs")
-            filtered_df = shots_df[shots_df['point'] == 1]
-            # Create an interactive 3D scatter plot
-            fig = px.scatter_3d(filtered_df, x='side', y='cut', z='vert', title="Total runs=" + str(i))
-            fig.show()
-
-    # print runtime
-    print("Runtime of the program is", time.time() - start)
-
-    # Speichern im Parquet-Format
-    shots_df.to_parquet("2_17_shots.parquet")
-    print('Dataframe saved to parquet file')
+    else:
+        # Load density data from file:
+        grid_axes, total_probability = load_density_from_parquet(filename_probability)
 
 
-if calculate_density == True:
-    # Laden aus der Parquet-Datei
-    shots_df = pd.read_parquet("2_17_shots.parquet")
+    variables=['side spin', 'vertical spin', 'cut angle']
 
-    # start timing
-    start = time.time()
-
-    # Compute density
-    grid_axes, total_probability = calculate_probability_map(
-        df=shots_df,
-        variables=['side', 'vert', 'cut'],
-        result_col='point',
-        stddev_dict={'side': 0.02, 'vert': 0.02, 'cut': 3},
-        steps=50
+    # Visualize interactively
+    plot_3d_probability_interactive(
+        grid_axes=grid_axes,
+        total_probability=total_probability,
+        variable_labels=variables  # Optional: ["Temperature", "Pressure", "Velocity"]
     )
 
-    # print runtime
-    print("Runtime of the program is", time.time() - start)
-
-else:
-    # Load density data from file:
-    grid_axes, total_probability = load_density_from_parquet("total_probability.parquet")
-
-
-variables=['side spin', 'vertical spin', 'cut angle']
-
-# Visualize interactively
-plot_3d_probability_interactive(
-    grid_axes=grid_axes,
-    total_probability=total_probability,
-    variable_labels=variables  # Optional: ["Temperature", "Pressure", "Velocity"]
-)
-
-standalone_slice_viewer(grid_axes, total_probability, variables)
+    standalone_slice_viewer(grid_axes, total_probability, variables)
