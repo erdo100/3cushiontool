@@ -7,14 +7,16 @@ from scipy.stats import norm
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from matplotlib.widgets import Slider, RadioButtons
+import time
+import numba as nb
+from numba import prange
 
-
-def calculate_probability_map(
+def calculate_probability_map_old(
         df: pd.DataFrame,
-        variables: list,  # List of variable column names (e.g., ['v1', 'v2'])
-        result_col: str,  # Name of the result column (e.g., 'P')
-        stddev_dict: dict,  # Maps variables to their standard deviations (e.g., {'v1': 0.5})
-        dv: float,  # Fraction of the variable's range (e.g., 0.1 = 10% of the range)
+        variables: list,
+        result_col: str,
+        stddev_dict: dict,
+        steps: float,
 ) -> tuple:
     """
     Calculate the probability density for each point in the n-dimensional space.
@@ -31,6 +33,9 @@ def calculate_probability_map(
     if missing_stddev:
         raise ValueError(f"Missing std deviations for: {missing_stddev}")
 
+    # Precompute variable arrays for faster access
+    var_arrays = {var: df[var].values for var in variables}
+    results = df[result_col].values
 
     # Prepare grid axes
     grid_axes = []
@@ -39,11 +44,10 @@ def calculate_probability_map(
         max_val = df[var].max()
         range_var = max_val - min_val
 
-        # Handle edge case where all values are identical
         if range_var == 0:
             grid = np.array([min_val])
         else:
-            step = dv * range_var  # Step size as fraction of the range
+            step = range_var / steps
             grid = np.arange(min_val, max_val + step, step)
 
         grid_axes.append(grid)
@@ -52,38 +56,183 @@ def calculate_probability_map(
     mesh = np.meshgrid(*grid_axes, indexing='ij')
     total_probability = np.zeros_like(mesh[0], dtype=np.float64)
 
-    results = df[result_col].values
+    # start timing speed
+    start = time.time()
 
-    # loop over all mesh grid points
+    # Loop over all mesh grid points
     for idx in np.ndindex(mesh[0].shape):
-
-        # Initialize the probability
-        P = np.ones_like(results)
-        # calculate the total probability for all shots in the results
+        # Compute combined mask for 3 sigma ranges
+        combined_mask = np.ones(len(df), dtype=bool)
         for vari, var in enumerate(variables):
             m = mesh[vari][idx]
             stddev = stddev_dict[var]
-            p = norm.pdf(df[var], loc=m, scale=stddev)
-            # normalize the density and multiply with the probability
-            P = P*p # probability density of all variables, without points
+            var_data = var_arrays[var]
+            var_mask = (var_data >= (m - 3 * stddev)) & (var_data <= (m + 3 * stddev))
+            combined_mask &= var_mask
 
-        # Normalize the total probablity
-        P = P / np.sum(P)
+        masked_indices = np.where(combined_mask)[0]
+
+        if len(masked_indices) == 0:
+            P = np.zeros_like(results)
+        else:
+            P = np.zeros_like(results)
+            product = np.ones(len(masked_indices), dtype=np.float64)
+            for vari, var in enumerate(variables):
+                m = mesh[vari][idx]
+                stddev = stddev_dict[var]
+                var_data = var_arrays[var]
+                p = norm.pdf(var_data[masked_indices], loc=m, scale=stddev)
+                product *= p
+            P[masked_indices] = product
+
+        # Normalize the probability
+        sum_P = np.sum(P)
+        if sum_P != 0:
+            P /= sum_P
 
         total_probability[idx] = np.sum(P * results)
 
-        print(grid_axes[0][idx[0]], grid_axes[1][idx[1]], grid_axes[2][idx[2]], total_probability[idx])
-
+    # print runtime
+    print("Runtime of the program is", time.time() - start)
 
     # Save to Parquet
     grid_coords = {f"{var}_grid": grid.flatten() for var, grid in zip(variables, mesh)}
     grid_coords["total_probability"] = total_probability.flatten()
-
-    # Save the grid coordinates and total probability to a Parquet file
-    print(f"Saving grid coordinates and total probability ...")
     pd.DataFrame(grid_coords).to_parquet("total_probability.parquet")
 
     return grid_axes, total_probability
+
+
+def calculate_probability_map(
+        df: pd.DataFrame,
+        variables: list,
+        result_col: str,
+        stddev_dict: dict,
+        steps: float,
+) -> tuple:
+    # Input validation (same as before)
+    missing_vars = [var for var in variables if var not in df.columns]
+    if missing_vars:
+        raise ValueError(f"Missing variables: {missing_vars}")
+    if result_col not in df.columns:
+        raise ValueError(f"Result column '{result_col}' not found.")
+    missing_stddev = [var for var in variables if var not in stddev_dict]
+    if missing_stddev:
+        raise ValueError(f"Missing std deviations for: {missing_stddev}")
+
+    # Convert DataFrame columns to numpy arrays for Numba compatibility
+    var_arrays = {var: df[var].values.astype(np.float64) for var in variables}
+    results = df[result_col].values.astype(np.float64)
+    stddevs = np.array([stddev_dict[var] for var in variables], dtype=np.float64)
+
+    # Prepare grid axes (same logic but store as numpy arrays)
+    grid_axes = []
+    grid_shapes = []
+    for var in variables:
+        min_val = df[var].min()
+        max_val = df[var].max()
+        range_var = max_val - min_val
+
+        if range_var == 0:
+            grid = np.array([min_val], dtype=np.float64)
+        else:
+            step = range_var / steps
+            grid = np.arange(min_val, max_val + step, step, dtype=np.float64)
+
+        grid_axes.append(grid)
+        grid_shapes.append(len(grid))
+
+    # Create meshgrid and flatten for parallel processing
+    mesh = np.meshgrid(*grid_axes, indexing='ij')
+    grid_points = np.stack([m.flatten() for m in mesh], axis=1)
+    total_probability = np.zeros(grid_points.shape[0], dtype=np.float64)
+
+    # Convert variables to 2D array (n_vars x n_samples)
+    data_matrix = np.stack([var_arrays[var] for var in variables], axis=0)
+
+    # Precompute constants for PDF calculation
+    sqrt_2pi = np.sqrt(2 * np.pi)
+    stddevs_squared = stddevs ** 2
+    coefficients = 1 / (stddevs * sqrt_2pi)
+
+    # Call Numba-optimized function
+    _compute_probabilities(
+        data_matrix, results,
+        grid_points, total_probability,
+        stddevs, coefficients, stddevs_squared,
+        *grid_shapes
+    )
+
+    # Reshape back to original grid shape
+    total_probability = total_probability.reshape(*grid_shapes)
+
+    # Save to Parquet (same as before)
+    grid_coords = {f"{var}_grid": grid.flatten() for var, grid in zip(variables, mesh)}
+    grid_coords["total_probability"] = total_probability.flatten()
+    pd.DataFrame(grid_coords).to_parquet("total_probability.parquet")
+
+    return grid_axes, total_probability
+
+
+@nb.njit(nogil=True, fastmath=True, parallel=True)
+def _compute_probabilities(
+        data_matrix: np.ndarray,
+        results: np.ndarray,
+        grid_points: np.ndarray,
+        total_probability: np.ndarray,
+        stddevs: np.ndarray,
+        coefficients: np.ndarray,
+        stddevs_squared: np.ndarray,
+        *grid_shapes: tuple
+):
+    n_vars, n_samples = data_matrix.shape
+    n_points = grid_points.shape[0]
+
+    for idx in prange(n_points):
+        # Get current grid point coordinates
+        current_point = grid_points[idx]
+
+        # Compute 3σ ranges mask
+        mask = np.ones(n_samples, dtype=np.bool_)
+        for var_idx in range(n_vars):
+            stddev = stddevs[var_idx]
+            lower = current_point[var_idx] - 3 * stddev
+            upper = current_point[var_idx] + 3 * stddev
+            var_data = data_matrix[var_idx]
+
+            # Vectorized mask computation
+            mask &= (var_data >= lower) & (var_data <= upper)
+
+        # Get indices of points within 3σ range
+        valid_indices = np.where(mask)[0]
+        n_valid = valid_indices.size
+
+        if n_valid == 0:
+            total_probability[idx] = 0.0
+            continue
+
+        # Compute probabilities using explicit PDF formula
+        log_probs = np.zeros(n_valid, dtype=np.float64)
+
+        for var_idx in range(n_vars):
+            m = current_point[var_idx]
+            data = data_matrix[var_idx, valid_indices]
+            coeff = coefficients[var_idx]
+            inv_2sigma2 = 1 / (2 * stddevs_squared[var_idx])
+
+            # Vectorized PDF calculation
+            diff = data - m
+            log_probs += np.log(coeff) - (diff * diff) * inv_2sigma2
+
+        # Convert from log space to linear
+        probs = np.exp(log_probs)
+        total_prob = np.sum(probs)
+
+        if total_prob > 0:
+            probs /= total_prob
+            total_probability[idx] = np.sum(probs * results[valid_indices])
+        else:
+            total_probability[idx] = 0.0
 
 
 def load_density_from_parquet(parquet_path: str) -> tuple:
@@ -117,7 +266,6 @@ def load_density_from_parquet(parquet_path: str) -> tuple:
     total_probability = df["total_probability"].values.reshape(shape)
 
     return grid_axes, total_probability
-
 
 # 2. Interactive 3D Visualization with Plotly
 def plot_3d_probability_interactive(grid_axes, total_probability, variable_labels=None):
@@ -167,7 +315,6 @@ def plot_3d_probability_interactive(grid_axes, total_probability, variable_label
     )
 
     fig.show()
-
 
 def standalone_slice_viewer(grid_axes, total_probability, variables):
     """Interactive 2D slice viewer with dynamic slider labels."""
@@ -251,7 +398,7 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
 
 
 runsims = False
-calculate_density = False
+calculate_density = True
 
 if runsims == True:
     # Define the problem: 4 variables, each with 3 levels
@@ -333,14 +480,21 @@ if calculate_density == True:
     # Laden aus der Parquet-Datei
     shots_df = pd.read_parquet("2_17_shots.parquet")
 
+    # start timing
+    start = time.time()
+
     # Compute density
     grid_axes, total_probability = calculate_probability_map(
         df=shots_df,
         variables=['side', 'vert', 'cut'],
         result_col='point',
         stddev_dict={'side': 0.02, 'vert': 0.02, 'cut': 3},
-        dv=0.05
+        steps=50
     )
+
+    # print runtime
+    print("Runtime of the program is", time.time() - start)
+
 else:
     # Load density data from file:
     grid_axes, total_probability = load_density_from_parquet("total_probability.parquet")
