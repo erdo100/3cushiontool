@@ -21,20 +21,18 @@ def init_worker():
     from threecushion_shot import BilliardEnv  # Import inside to avoid pickling issues
     worker_env = BilliardEnv()
 
-
 def process_sample(sample):
     a, b, cut = sample
     try:
         # Fixed parameters directly in the function
         worker_env.prepare_new_shot(
-            (0.5275, 0.71), (0.71, 0.71), (0.71, 2.13),
-            a, b, 3.5, cut, 0
+            (0.5, 1.0), (1.1, 1.0), (0.08, 0.5),
+            a, b, cut, 3.0, 0
         )
         return worker_env.simulate_shot()
     except Exception as e:
         print(f"Error processing sample {sample}: {e}")
         return -1
-
 
 def run_optimized_simulation(resolution):
     problem = {
@@ -46,11 +44,19 @@ def run_optimized_simulation(resolution):
     runs = resolution * (2 * 3 + 2)
     method = 'Sobol'
 
+    # Extract bounds for scaling
+    lower_bounds = np.array([param[0] for param in problem['bounds']])
+    upper_bounds = np.array([param[1] for param in problem['bounds']])
+
     if method == 'Sobol':
         samples = i4_sobol_generate(problem['num_vars'], resolution)
-        samples = samples * (np.array([0.5, 0.5, 89]) - np.array([-0.5, -0.5, -89])) + np.array([-0.5, -0.5, -89])
+        # Dynamic scaling using problem bounds
+        samples = samples * (upper_bounds - lower_bounds) + lower_bounds
     elif method == 'UniformRandom':
-        samples = np.random.uniform(low=[-0.5, -0.5, -89], high=[0.5, 0.5, 89], size=(runs, 3))
+        # Dynamic parameter ranges for uniform sampling
+        samples = np.random.uniform(low=lower_bounds, 
+                                    high=upper_bounds, 
+                                    size=(runs, problem['num_vars']))
 
     shots_df = pd.DataFrame(samples, columns=problem['names'])
     samples_list = [tuple(row) for row in samples]
@@ -63,93 +69,6 @@ def run_optimized_simulation(resolution):
 
     shots_df.to_parquet("2_17_shots_optimized.parquet")
     return shots_df
-
-
-def calculate_probability_map_old(
-        df: pd.DataFrame,
-        variables: list,
-        result_col: str,
-        stddev_dict: dict,
-        steps: float,
-) -> tuple:
-    """
-    Calculate the probability density for each point in the n-dimensional space.
-    Returns:
-    tuple: (grid_axes, density_array)
-    """
-    # Validate inputs
-    missing_vars = [var for var in variables if var not in df.columns]
-    if missing_vars:
-        raise ValueError(f"Missing variables: {missing_vars}")
-    if result_col not in df.columns:
-        raise ValueError(f"Result column '{result_col}' not found.")
-    missing_stddev = [var for var in variables if var not in stddev_dict]
-    if missing_stddev:
-        raise ValueError(f"Missing std deviations for: {missing_stddev}")
-
-    # Precompute variable arrays for faster access
-    var_arrays = {var: df[var].values for var in variables}
-    results = df[result_col].values
-
-    # Prepare grid axes
-    grid_axes = []
-    for var in variables:
-        min_val = df[var].min()
-        max_val = df[var].max()
-        range_var = max_val - min_val
-
-        if range_var == 0:
-            grid = np.array([min_val])
-        else:
-            step = range_var / steps
-            grid = np.arange(min_val, max_val + step, step)
-
-        grid_axes.append(grid)
-
-    # Create n-dimensional grid
-    mesh = np.meshgrid(*grid_axes, indexing='ij')
-    total_probability = np.zeros_like(mesh[0], dtype=np.float64)
-
-    # Loop over all mesh grid points
-    for idx in np.ndindex(mesh[0].shape):
-        # Compute combined mask for 3 sigma ranges
-        combined_mask = np.ones(len(df), dtype=bool)
-        for vari, var in enumerate(variables):
-            m = mesh[vari][idx]
-            stddev = stddev_dict[var]
-            var_data = var_arrays[var]
-            var_mask = (var_data >= (m - 3 * stddev)) & (var_data <= (m + 3 * stddev))
-            combined_mask &= var_mask
-
-        masked_indices = np.where(combined_mask)[0]
-
-        if len(masked_indices) == 0:
-            P = np.zeros_like(results)
-        else:
-            P = np.zeros_like(results)
-            product = np.ones(len(masked_indices), dtype=np.float64)
-            for vari, var in enumerate(variables):
-                m = mesh[vari][idx]
-                stddev = stddev_dict[var]
-                var_data = var_arrays[var]
-                p = norm.pdf(var_data[masked_indices], loc=m, scale=stddev)
-                product *= p
-            P[masked_indices] = product
-
-        # Normalize the probability
-        sum_P = np.sum(P)
-        if sum_P != 0:
-            P /= sum_P
-
-        total_probability[idx] = np.sum(P * results)
-
-    # Save to Parquet
-    grid_coords = {f"{var}_grid": grid.flatten() for var, grid in zip(variables, mesh)}
-    grid_coords["total_probability"] = total_probability.flatten()
-    pd.DataFrame(grid_coords).to_parquet("total_probability.parquet")
-
-    return grid_axes, total_probability
-
 
 def calculate_probability_map(
         df: pd.DataFrame,
@@ -222,7 +141,6 @@ def calculate_probability_map(
 
     return grid_axes, total_probability
 
-
 @nb.njit(nogil=True, fastmath=True, parallel=True)
 def _compute_probabilities(
         data_matrix: np.ndarray,
@@ -283,7 +201,6 @@ def _compute_probabilities(
         else:
             total_probability[idx] = 0.0
 
-
 def load_density_from_parquet(parquet_path: str) -> tuple:
     """
     Load the saved Parquet file and reconstruct grid axes and density array.
@@ -316,57 +233,8 @@ def load_density_from_parquet(parquet_path: str) -> tuple:
 
     return grid_axes, total_probability
 
-# 2. Interactive 3D Visualization with Plotly
-def plot_3d_probability_interactive(grid_axes, total_probability, variable_labels=None):
-    """
-    Visualize the 3D density using Plotly Volume.
-
-    Args:
-        grid_axes (list): List of 1D arrays (grid coordinates for each variable).
-        density (np.ndarray): 3D density array.
-        variable_labels (list): Optional labels for axes (e.g., ["v1", "v2", "v3"]).
-    """
-    # Create 3D coordinate grids
-    X, Y, Z = np.meshgrid(*grid_axes, indexing='ij')
-
-    # Flatten coordinates and total_probability for Plotly
-    x_flat = X.flatten()
-    y_flat = Y.flatten()
-    z_flat = Z.flatten()
-    P_flat = total_probability.flatten()
-
-    # Default axis labels
-    if variable_labels is None:
-        variable_labels = [f"Variable {i + 1}" for i in range(len(grid_axes))]
-
-    # Create Volume plot
-    fig = go.Figure(data=go.Volume(
-        x=x_flat,
-        y=y_flat,
-        z=z_flat,
-        value=P_flat,
-        isomin=0.1 * P_flat.max(),
-        isomax=P_flat.max(),
-        opacity=0.1,
-        surface_count=20,
-        colorscale='viridis',
-        caps=dict(x_show=False, y_show=False, z_show=False)
-    ))
-
-    # Update layout
-    fig.update_layout(
-        scene=dict(
-            xaxis_title=variable_labels[0],
-            yaxis_title=variable_labels[1],
-            zaxis_title=variable_labels[2],
-        ),
-        margin=dict(l=0, r=0, b=0, t=0)
-    )
-
-    fig.show()
-
 def standalone_slice_viewer(grid_axes, total_probability, variables):
-    """Interactive 2D slice viewer with dynamic slider labels."""
+    """Interactive 2D slice viewer with keyboard controls."""
     fig, ax = plt.subplots(figsize=(8, 6))
     plt.subplots_adjust(left=0.1, bottom=0.3)
 
@@ -375,31 +243,40 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
     slice_idx = len(grid_axes[var_idx]) // 2
     x, y = grid_axes[1], grid_axes[2]
     slice_data = total_probability[slice_idx, :, :]
+    
+    # Initial plot elements
     contour = ax.contourf(x, y, slice_data.T, cmap='viridis', levels=20)
     cbar = fig.colorbar(contour, ax=ax)
+    max_val_initial = slice_data.max()
+    j_max_initial, k_max_initial = np.unravel_index(slice_data.argmax(), slice_data.shape)
+    scatter = ax.scatter(x[j_max_initial], y[k_max_initial], color='red', marker='*', s=100)
+    text = ax.text(x[j_max_initial] + 0.02*(x.ptp()), y[k_max_initial], 
+                   f'Max: {max_val_initial:.2f}', color='red', va='center', ha='left')
+    
     ax.set_xlabel(variables[1])
     ax.set_ylabel(variables[2])
 
-    # Slider axis
+    # Slider setup
     ax_slider = plt.axes([0.1, 0.1, 0.65, 0.03])
     slider = Slider(
         ax=ax_slider,
-        label=f'{variables[var_idx]}',  # Initialize with current variable
+        label=variables[var_idx],
         valmin=grid_axes[var_idx].min(),
         valmax=grid_axes[var_idx].max(),
         valinit=grid_axes[var_idx][slice_idx],
         valstep=np.diff(grid_axes[var_idx])[0]
     )
 
-    # Radio buttons
+    # Radio buttons setup
     ax_radio = plt.axes([0.8, 0.1, 0.15, 0.15])
     radio = RadioButtons(ax_radio, labels=variables, active=0)
 
     def update_slice(val):
-        """Update the plot with new slice position."""
-        nonlocal var_idx
+        """Update plot elements with proper axis scaling."""
+        nonlocal var_idx, contour, scatter, text
         idx = np.abs(grid_axes[var_idx] - val).argmin()
 
+        # Get new data slice
         if var_idx == 0:
             data = total_probability[idx, :, :]
             x, y = grid_axes[1], grid_axes[2]
@@ -413,35 +290,79 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
             x, y = grid_axes[0], grid_axes[1]
             xl, yl = variables[0], variables[1]
 
-        ax.clear()
-        ax.contourf(x, y, data.T, cmap='viridis', levels=20)
+        # Clear previous elements
+        for coll in contour.collections:
+            coll.remove()
+        scatter.remove()
+        text.remove()
+
+        # Create new plot elements with updated axis limits
+        contour = ax.contourf(x, y, data.T if var_idx != 2 else data, 
+                            cmap='viridis', levels=20)
+        cbar.mappable = contour
+        cbar.update_normal(contour)
+        
+        # Set axis limits to match current grid axes
+        ax.set_xlim(x.min(), x.max())
+        ax.set_ylim(y.min(), y.max())
+        
+        # Update max value annotation
+        max_val = data.max()
+        j_max, k_max = np.unravel_index(data.argmax(), data.shape)
+        x_coord = x[j_max] if var_idx != 2 else x[k_max]
+        y_coord = y[k_max] if var_idx != 2 else y[j_max]
+        
+        scatter = ax.scatter(x_coord, y_coord, color='red', marker='*', s=100)
+        text = ax.text(x_coord + 0.02*(x.ptp()), y_coord, f'Max: {max_val:.2f}',
+                       color='red', va='center', ha='left')
+
+        # Update labels and title
         ax.set_xlabel(xl)
         ax.set_ylabel(yl)
         ax.set_title(f'Slice at {variables[var_idx]} = {grid_axes[var_idx][idx]:.2f}')
         fig.canvas.draw_idle()
 
     def select_variable(label):
-        """Update slider and label when variable changes."""
+        """Handle variable selection changes with full slider reset."""
         nonlocal var_idx
         var_idx = variables.index(label)
 
-        # Update slider properties
-        slider.valmin = grid_axes[var_idx].min()
-        slider.valmax = grid_axes[var_idx].max()
-        slider.valstep = np.diff(grid_axes[var_idx])[0]
-        slider.set_val(grid_axes[var_idx][len(grid_axes[var_idx]) // 2])
-
-        # Update slider label to show current variable
-        slider.label.set_text(variables[var_idx])  # Fix: Update label text
+        # Update slider configuration
+        current_var_grid = grid_axes[var_idx]
+        slider.valmin = current_var_grid.min()
+        slider.valmax = current_var_grid.max()
+        slider.valstep = np.diff(current_var_grid)[0]
+        slider.set_val(current_var_grid[len(current_var_grid) // 2])
+        
+        # Update slider track visualization
         slider.ax.set_xlim(slider.valmin, slider.valmax)
+        slider.label.set_text(variables[var_idx])
+        
+        # Force UI refresh
         fig.canvas.draw_idle()
-
-        # Update plot
+        
+        # Trigger plot update
         update_slice(slider.val)
 
-    # Connect events
+    def on_key_press(event):
+        """Handle keyboard events for slider control."""
+        if event.key in ['left', 'right']:
+            current_val = slider.val
+            step = slider.valstep
+            
+            if event.key == 'left':
+                new_val = current_val - step
+            else:
+                new_val = current_val + step
+                
+            # Keep within bounds
+            new_val = np.clip(new_val, slider.valmin, slider.valmax)
+            slider.set_val(new_val)
+
+    # Connect UI elements
     slider.on_changed(update_slice)
     radio.on_clicked(select_variable)
+    fig.canvas.mpl_connect('key_press_event', on_key_press)
 
     plt.show()
 
@@ -451,7 +372,7 @@ if __name__ == "__main__":
     runsims = True
     calculate_density = True
     resolution = 2 ** 14
-    filebase = "2_18_shots"
+    filebase = "short_angle_01"
     filename_results = filebase + "_results.parquet"
     filename_probability = filebase + "_probability.parquet"
 
@@ -459,79 +380,9 @@ if __name__ == "__main__":
         # start timing
         start = time.time()
 
-        if True:
-            shots_df = run_optimized_simulation(resolution)
+        shots_df = run_optimized_simulation(resolution)
 
-            shots_df.to_parquet(filename_results)
-
-
-        else:
-            # Define the problem: 4 variables, each with 3 levels
-            problem = {
-                'num_vars': 3,
-                'names': ['side', 'vert', 'cut'],  # Names for the variables
-                # Bounds for each variable
-                'bounds': [[-0.5, 0.5], # a
-                           [-0.5, 0.5], # b
-                           #[2, 7],      # velocity
-                           [-89, 89]    # cut angle
-                           ]
-            }
-
-
-
-            runs = resolution*(2*3+2)
-            method = 'Sobol'
-            # method = 'UniformRandom'
-
-            if method == 'Sobol':
-                # Generate the Sobol design using Sobol sampling
-                samples = sobol.sample(problem, resolution)
-
-            elif method == 'UniformRandom':
-                # Generate random uniform samples within the bounds for each variable
-                samples = np.random.uniform(
-                    low=[-0.5, -0.5, -89],  # Lower bounds for each variable
-                    high=[0.5, 0.5, 89],     # Upper bounds for each variable
-                    size=(runs, problem['num_vars'])  # Number of samples and variables
-                )
-
-
-            # Convert to a pandas DataFrame for easier inspection
-            shots_df = pd.DataFrame(samples, columns=problem['names'])
-
-            # Print the size (number of samples and number of variables)
-            print("Size of the samples array:", samples.shape)
-
-            env = BilliardEnv()
-
-            for i in range(runs):
-                a = shots_df.loc[i, 'side']
-                b = shots_df.loc[i, 'vert']
-                v = 3.5
-                cut = shots_df.loc[i, 'cut']
-                theta = 0
-
-                ball1xy = (0.5275, 0.71)
-                ball2xy = (0.71, 0.71)
-                ball3xy = (0.71, 2.13)
-
-                env.prepare_new_shot(ball1xy, ball2xy, ball3xy, a, b, v, cut, theta)
-
-                point = env.simulate_shot()
-                shots_df.at[i, 'point'] = point
-
-                if (i+1) % 200000 == 0:
-                    print((time.time() - start)/3600,"h: ", i ," runs")
-                    filtered_df = shots_df[shots_df['point'] == 1]
-                    # Create an interactive 3D scatter plot
-                    fig = px.scatter_3d(filtered_df, x='side', y='cut', z='vert', title="Total runs=" + str(i))
-                    fig.show()
-
-
-            # Speichern im Parquet-Format
-            shots_df.to_parquet("2_12_shots.parquet")
-            print('Dataframe saved to parquet file')
+        shots_df.to_parquet(filename_results)
 
         # print runtime
         print("Runtime of run_optimized_simulation is", time.time() - start)
@@ -562,12 +413,5 @@ if __name__ == "__main__":
 
 
     variables=['side spin', 'vertical spin', 'cut angle']
-
-    # Visualize interactively
-    plot_3d_probability_interactive(
-        grid_axes=grid_axes,
-        total_probability=total_probability,
-        variable_labels=variables  # Optional: ["Temperature", "Pressure", "Velocity"]
-    )
 
     standalone_slice_viewer(grid_axes, total_probability, variables)
