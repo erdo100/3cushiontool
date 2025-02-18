@@ -25,7 +25,7 @@ class Shots:
         self.point = point
         
 class BilliardEnv:
-    def __init__(self):
+    def __init__(self, u_slide, u_roll, u_sp_prop, u_ballball, e_ballball, e_cushion, f_cushion):
         self.table_width = 2.84  # Table dimensions (meters)
         self.table_height = 1.42
         self.series_length = 0
@@ -38,13 +38,14 @@ class BilliardEnv:
         self.ball3_ini = (1.0, 1.0)  # Red
 
         # define the properties
-        self.u_slide = 0.15
-        self.u_roll = 0.005
-        self.u_sp_prop = 10 * 2 / 5 / 9
-        self.u_ballball = 0.05
-        self.e_ballball = 0.95
-        self.e_cushion = 0.9
-        self.f_cushion = 0.15
+        self.u_slide = u_slide
+        self.u_roll = u_roll
+        self.u_sp_prop = u_sp_prop
+        self.u_ballball = u_ballball
+        self.e_ballball = e_ballball
+        self.e_cushion = e_cushion
+        self.f_cushion = f_cushion
+            
         self.grav = 9.81
 
         self.mball = 0.210
@@ -70,7 +71,7 @@ class BilliardEnv:
         )
         self.cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
 
-    def prepare_new_shot(self, ball1xy, ball2xy, ball3xy, a, b, cut, v, theta):
+    def prepare_new_shot(self, ball1xy, ball2xy, ball3xy, a, b, phi, v, theta):
 
         # Create balls in new positions
         wball = pt.Ball.create("white", xy=ball1xy, m=self.mball, R=self.Rball,
@@ -94,7 +95,7 @@ class BilliardEnv:
         # Wrap it up as a System
         self.system = pt.System(table=self.table, balls=(wball, yball, rball), cue=self.cue)
 
-        phi = pt.aim.at_ball(self.system, "red", cut=cut)
+        # phi = pt.aim.at_ball(self.system, "red", cut=cut)
         # set the cue
         self.cue.set_state(a=a, b=b, V0=v, phi=phi, theta=theta)
 
@@ -113,10 +114,11 @@ class BilliardEnv:
         point = 0
         pt.simulate(self.system, inplace=True)
 
+        results, tsim = self.get_ball_positions()
         if is_point(self.system):
             point = 1
 
-        return point
+        return point, results, tsim
 
     def calculate_reward(self):
 
@@ -428,6 +430,22 @@ class BilliardEnv:
         reward = interpolator(point_distance[0])
         
         return reward
+    
+    def get_ball_positions(self):
+        shot = self.system
+        shotcont = pt.continuize(shot, dt=0.01, inplace=False)
+        cue_ball = shotcont.balls["white"]
+        cue_history = cue_ball.history_cts
+        
+        
+        rvw_cue, s_cue, t_cue = cue_history.vectorize()
+        # We can grab the xy-coordinates from the `rvw` array by with the following.
+        results = {}
+        results[1] = rvw_cue[:, 0, :2]
+        results[2] = rvw_cue[:, 1, :2]
+        results[3] = rvw_cue[:, 2, :2]
+        
+        return results, t_cue
 
     def plot_shot(self):
 
@@ -443,13 +461,15 @@ class BilliardEnv:
         vel_cue = rvw_cue[:, 1, :2]
         ang_vel_cue = rvw_cue[:, 2, :3]
 
+        #print(vel_cue[1,1], ang_vel_cue[1,0])
+
         # Plot the cue ball coordinates, velocities and angular velocities in a figure with 3 subplots
         # ax1 is 1/3 width and 1 height at 0 , 0
         # ax2 is 2/3 width and 1/2 height at 1/3, 0.5
         # ax3 is 2/3 width and 1/2 height at 1/3, 0
 
        # Create a figure with a custom size (adjust as needed)
-        fig = plt.figure(figsize=(12, 6))
+        fig = plt.figure(figsize=(12, 8))
 
         # Calculate grid spacing: 2.84 divided by 8
         grid_step = 2.84 / 8  # ≈ 0.355
@@ -458,9 +478,10 @@ class BilliardEnv:
         axs = [None, None, None]
 
         # Define each axis using [left, bottom, width, height] in normalized coordinates (0 to 1)
-        axs[0] = fig.add_axes([0, 0, 1/3, 1])     # Left third (full height)
-        axs[1] = fig.add_axes([1/3, 0.5, 2/3, 0.5])  # Right two-thirds (top half)
-        axs[2] = fig.add_axes([1/3, 0, 2/3, 0.5])    # Right two-thirds (bottom half)
+        d = 0.05  # Padding between subplots
+        axs[0] = fig.add_axes([d, d, 1/3-d, 1-d*2])     # Left third (full height)
+        axs[1] = fig.add_axes([1/3+d, 0.5+d, 2/3-d, 0.5-2*d])  # Right two-thirds (top half)
+        axs[2] = fig.add_axes([1/3+d, 0+d, 2/3-d, 0.5-2*d])    # Right two-thirds (bottom half)
 
         
         # Plot the cue ball coordinates

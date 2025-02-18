@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 import pooltool as pt
 from pooltool.ruleset.three_cushion import is_point
+
 # from pooltool.physics.resolve.resolver import RESOLVER_CONFIG_PATH
 # print(RESOLVER_CONFIG_PATH)
 
@@ -13,11 +14,11 @@ ypos = (1.1, 1.0)  # Yellow
 rpos = (0.08, 0.5)  # Red
 
 # shot props
-sidespin = -0.153
-vertspin = 0.372
+sidespin = 0.
+vertspin = 0.
 cuespeed = 2.5
 cutangle = -87
-cueincline = 0
+cueincline = 45
 
 # define the properties
 u_slide = 0.15
@@ -93,6 +94,7 @@ if is_point(system):
     print("Point: YES")
 else:
     print("Point: NO")
+
 
 # Open up the shot in the GUI
 pt.show(system)

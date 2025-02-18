@@ -57,7 +57,8 @@ def run_optimized_simulation(resolution):
         samples = np.random.uniform(low=lower_bounds, 
                                     high=upper_bounds, 
                                     size=(runs, problem['num_vars']))
-
+    print("resolution:", resolution)
+    print("Shape:", samples.shape)
     shots_df = pd.DataFrame(samples, columns=problem['names'])
     samples_list = [tuple(row) for row in samples]
 
@@ -67,7 +68,6 @@ def run_optimized_simulation(resolution):
 
     shots_df['point'] = results
 
-    shots_df.to_parquet("2_17_shots_optimized.parquet")
     return shots_df
 
 def calculate_probability_map(
@@ -371,7 +371,7 @@ if __name__ == "__main__":
 
     runsims = True
     calculate_density = True
-    resolution = 2 ** 14
+    resolution = 2 ** 10
     filebase = "short_angle_01"
     filename_results = filebase + "_results.parquet"
     filename_probability = filebase + "_probability.parquet"
@@ -399,8 +399,8 @@ if __name__ == "__main__":
             df=shots_df,
             variables=['side', 'vert', 'cut'],
             result_col='point',
-            stddev_dict={'side': 0.02, 'vert': 0.02, 'cut': 3},
-            steps=100,
+            stddev_dict={'side': 0.025, 'vert': 0.025, 'cut': 3},
+            steps=150,
             filename=filename_probability,
         )
 
