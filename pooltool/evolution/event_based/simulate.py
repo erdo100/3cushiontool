@@ -149,7 +149,7 @@ def simulate(
 
     if not engine:
         engine = DEFAULT_ENGINE
-
+    print("called simulate")
     shot.reset_history()
     shot._update_history(null_event(time=0))
 

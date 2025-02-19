@@ -10,9 +10,9 @@ with open('shots.pkl', 'rb') as f:
     shots = pickle.load(f)
 
 
-Calculation of phi
-determine cue ball for current shot
-determine ball 2 for current shot
+# Calculation of phi
+# determine cue ball for current shot
+# determine ball 2 for current shot
 
 
 
@@ -44,11 +44,20 @@ physics_limits = {
 # Create billiard environment
 shot_env = BilliardEnv(**physics_params)
 
-def calculate_initial_shot_direction(ball1_trajectory):
+def initial_shot_direction(ball1_trajectory):
     dx = ball1_trajectory['x'][1] - ball1_trajectory['x'][0]
     dy = ball1_trajectory['y'][1] - ball1_trajectory['y'][0]
     phi = np.arctan2(dy, dx)
-    print(dx, dy)
+    print(dx, dy, phi)
+    
+    return np.degrees(phi)
+
+def initial_cut_angle(ball1_trajectory, ball2_trajectory):
+    dx = ball2_trajectory['x'][0] - ball1_trajectory['x'][0]
+    dy = ball2_trajectory['y'][0] - ball1_trajectory['y'][0]
+    phi = np.arctan2(dy, dx)
+    print(dx, dy, phi)
+    
     return np.degrees(phi)
 
 def rms_difference(simulated, actual):
@@ -110,7 +119,7 @@ def optimize_physics_parameters():
             ball1xy = (shot['balls'][1]['x'][0], shot['balls'][1]['y'][0])
             ball2xy = (shot['balls'][2]['x'][0], shot['balls'][2]['y'][0])
             ball3xy = (shot['balls'][3]['x'][0], shot['balls'][3]['y'][0])
-            phi = calculate_initial_shot_direction(shot['balls'][1])
+            phi = initial_shot_direction(shot['balls'][1])
             print(phi)
             initial_params = [0.0, 0.0, phi, 3.0, 0]
             _, rms = optimize_shot_parameters(shot, initial_params, ball1xy, ball2xy, ball3xy)

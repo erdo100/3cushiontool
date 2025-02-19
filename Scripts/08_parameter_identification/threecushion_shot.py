@@ -54,8 +54,7 @@ class BilliardEnv:
         cue_mass = 0.576
         cue_len = 1.47
         cue_tip_R = 0.022
-        cue_tip_mass = 0.0000001
-
+        cue_tip_mass = 0.1
 
         # Build a table with default BILLIARD specs
         self.table = pt.Table.default(pt.TableType.BILLIARD)
