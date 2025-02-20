@@ -10,7 +10,7 @@ from datetime import datetime
 
 # Constants
 BALL_COLORS = {1: 'white', 2: 'yellow', 3: 'red'}  # Ball 1 is now white
-BALL_DIAMETER = 61.5  # in mm
+BALL_DIAMETER = 0.0615  # in mm
 
 class BilliardDataViewer:
     def __init__(self, root):
@@ -34,7 +34,6 @@ class BilliardDataViewer:
         self.listbox_frame.pack(side=tk.LEFT, fill=tk.Y)
         
         # Shot List Table with Scrollbar
-        # self.shot_listbox = tk.Listbox(self.listbox_frame, selectmode=tk.SINGLE, height=20, width=30)  # Single selection mode
         self.shot_listbox = tk.Listbox(self.listbox_frame, selectmode=tk.BROWSE, height=20, width=30)
         self.shot_listbox.pack(side=tk.LEFT, fill=tk.Y)
         
@@ -68,17 +67,17 @@ class BilliardDataViewer:
     
     def _setup_axes(self):
         """Configure axis limits, ticks, grid, and background"""
-        self.ax.set_xlim(0, 2840)
-        self.ax.set_ylim(0, 1420)
-        self.ax.set_xticks(np.linspace(0, 2840, 9))  # 9 ticks for x-axis
-        self.ax.set_yticks(np.linspace(0, 1420, 5))  # 5 ticks for y-axis
+        self.ax.set_xlim(0, 2.840)
+        self.ax.set_ylim(0, 1.420)
+        self.ax.set_xticks(np.linspace(0, 2.840, 9))  # 9 ticks for x-axis
+        self.ax.set_yticks(np.linspace(0, 1.420, 5))  # 5 ticks for y-axis
         self.ax.set_xticklabels([])  # Remove x-axis tick labels
         self.ax.set_yticklabels([])  # Remove y-axis tick labels
         self.ax.grid(True, linestyle='--', alpha=0.6)  # Add a grid with dashed lines
         self.ax.set_facecolor('lightblue')  # Set background color to light blue
     
     def load_data(self):
-        file_path = filedialog.askopenfilename(filetypes=[("Pickle files", "*.pkl"), ("JSON files", "*.json")])
+        file_path = filedialog.askopenfilename(filetypes=[("Pickle files", "*.pkl")])
         if not file_path:
             return
         
@@ -86,15 +85,8 @@ class BilliardDataViewer:
         if file_path.endswith(".pkl"):
             with open(file_path, "rb") as f:
                 self.all_shots = pickle.load(f)
-        elif file_path.endswith(".json"):
-            with open(file_path, "r") as f:
-                self.all_shots = json.load(f)
-                # Convert lists back to NumPy arrays
-                for shot in self.all_shots:
-                    for ball in shot["balls"].values():
-                        ball["t"] = np.array(ball["t"])
-                        ball["x"] = np.array(ball["x"])
-                        ball["y"] = np.array(ball["y"])
+                print(f"Loaded {len(self.all_shots)} shots from {file_path}.")
+                
         
         # Sort shots by shotID
         self.all_shots.sort(key=lambda x: x['shotID'])
@@ -105,7 +97,10 @@ class BilliardDataViewer:
             self.shot_listbox.insert(tk.END, f"{shot['filename']}: {shot['shotID']}")
         
         self.shot_listbox.focus_set()  # Give the listbox keyboard focus so arrow keys work
-        
+            # Select the first item in the listbox and update the plot
+        if self.all_shots:
+            self.shot_listbox.selection_set(0)
+            self.update_plot()
     def update_plot(self, event=None):
         selected_indices = self.shot_listbox.curselection()
         if not selected_indices:
@@ -121,7 +116,7 @@ class BilliardDataViewer:
             color = BALL_COLORS[ball_num]
             self.ax.plot(ball_data["x"], ball_data["y"], 
                         color=color, 
-                        label=f"Ball {ball_num} (Shot {shot['shotID']}",
+                        label=f"Ball {ball_num} (Shot {shot['shotID']})",
                         marker='o', markersize=2)
             
             # Plot initial position as a circle with black border

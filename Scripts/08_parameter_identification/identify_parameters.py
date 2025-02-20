@@ -10,9 +10,12 @@ with open('shots.pkl', 'rb') as f:
     shots = pickle.load(f)
 
 
-# Calculation of phi
+# make data quality check of digitized data
 # determine cue ball for current shot
 # determine ball 2 for current shot
+# Calculation of phi
+
+# make data quality check of digitized data
 
 
 

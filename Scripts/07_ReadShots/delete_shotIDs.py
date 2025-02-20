@@ -2,7 +2,7 @@
 import pickle
 import os
 
-FILE_NAME = "billiard_shots_new.pkl"
+FILE_NAME = "all_shots.pkl"
 MAX_SHOT_ID = 394188
 
 print("Current working directory:", os.getcwd())
