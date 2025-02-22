@@ -156,6 +156,7 @@ def simulate(
     if shot.get_system_energy() == 0 and shot.cue.V0 > 0:
         # System has no energy, but the cue stick has an impact velocity. So create and
         # resolve a stick-ball collision to start things off
+        print("called stick_ball_collision")
         event = stick_ball_collision(
             stick=shot.cue,
             ball=shot.balls[shot.cue.cue_ball_id],
@@ -167,6 +168,8 @@ def simulate(
 
     collision_cache = CollisionCache.create()
     transition_cache = TransitionCache.create(shot)
+
+    
 
     events = 0
     while True:

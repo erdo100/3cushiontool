@@ -122,10 +122,9 @@ class InstantaneousPoint(CoreStickBallCollision):
     Additionally, a deflection (squirt) angle is calculated via
     :mod:`pooltool.physics.resolve.stick_ball.squirt`).
     """
-
     english_throttle: float = 1.0
     squirt_throttle: float = 1.0
-
+    
     model: StickBallModel = attrs.field(
         default=StickBallModel.INSTANTANEOUS_POINT, init=False, repr=False
     )
@@ -150,6 +149,8 @@ class InstantaneousPoint(CoreStickBallCollision):
             self.squirt_throttle,
         )
         v = coordinate_rotation(v, alpha)
+        # print squirt angle aplha
+        print(self.squirt_throttle, alpha)
 
         rvw = np.array([ball.state.rvw[0], v, w])
         s = const.sliding

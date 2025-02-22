@@ -148,9 +148,11 @@ class Resolver:
         if not RESOLVER_PATH.exists():
             resolver = _default_config()
             resolver.save(RESOLVER_PATH)
+            print(f"Writing resolver to {RESOLVER_PATH}")
             return resolver
 
         try:
+            print(f"Reading resolver from {RESOLVER_PATH}")
             resolver = cls.load(RESOLVER_PATH)
         except ClassValidationError:
             full_traceback = traceback.format_exc()
