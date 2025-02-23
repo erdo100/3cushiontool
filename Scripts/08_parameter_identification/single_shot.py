@@ -20,7 +20,7 @@ ball1xy = (2*diamond, 4*diamond)
 ball2xy = (2*diamond, 10*diamond)
 ball3xy = (6*diamond, 10*diamond)
 
-a = 0.5
+a = 0.0
 b = 0.
 phi = 90.0
 v = 3.0

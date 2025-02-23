@@ -3,9 +3,11 @@ import glob
 import json
 import numpy as np
 import pickle
+import tkinter as tk
+from tkinter import filedialog
 
 tablesize = (2.84, 1.42)
-ball_radius = 0.0615/2
+ball_radius = 0.0615 / 2
 
 def extract_tracking_data_from_file(filename):
     """
@@ -80,16 +82,6 @@ def extract_tracking_data_from_file(filename):
     return shots
 
 def extract_all_shots_from_folder(folder):
-    """
-    Iterates through all JSON files in the given folder, extracts shot data from each,
-    prints the number of shots extracted per file, and aggregates them into a single list.
-    
-    Parameters:
-        folder (str): The path to the folder containing JSON files.
-        
-    Returns:
-        list: A list containing the shot data dictionaries from all files.
-    """
     all_shots = []
     json_files = glob.glob(os.path.join(folder, "*.json"))
     
@@ -98,6 +90,14 @@ def extract_all_shots_from_folder(folder):
         print(f"File: {os.path.basename(json_file)} - Shots extracted: {len(shots)}")
         all_shots.extend(shots)
     
+    return all_shots
+
+def extract_all_shots_from_files(files):
+    all_shots = []
+    for file in files:
+        shots = extract_tracking_data_from_file(file)
+        print(f"File: {os.path.basename(file)} - Shots extracted: {len(shots)}")
+        all_shots.extend(shots)
     return all_shots
 
 # function to check for all shots whether in that shot at least 1 ball has more than 10 data points
@@ -517,47 +517,51 @@ def extract_b1_b2_b3(all_shots):
     
     return all_shots
 
-
+def select_files():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    file_paths = filedialog.askopenfilenames(title="Select JSON Files", filetypes=[("JSON files", "*.json")])
+    return file_paths
 
 if __name__ == '__main__':
+    file_paths = select_files()
+    
+    all_shots = []
+    
+    if file_paths:
+        all_shots.extend(extract_all_shots_from_files(file_paths))
+    
+    print(f"\nTotal shots extracted from all files and folders: {len(all_shots)}")
+    
+    # Sort shots by shotID
+    all_shots.sort(key=lambda x: x['shotID'])
+    
+    # Save to a file
+    with open("all_shots_raw.pkl", "wb") as f:
+        pickle.dump(all_shots, f)
 
-    if True:
-        folder = "BilliardGamesData"
-        all_shots = extract_all_shots_from_folder(folder)
-        print(f"\nTotal shots extracted from all files: {len(all_shots)}")
-        
-        # Sort shots by shotID
-        all_shots.sort(key=lambda x: x['shotID'])
-        
-        # Save to a file
-        with open("all_shots_raw.pkl", "wb") as f:
-            pickle.dump(all_shots, f)
+    # Load the shots from the file
+    with open("all_shots_raw.pkl", "rb") as f:
+        shots = pickle.load(f)
 
+    print(f"\nTotal shots loaded from file: {len(shots)}")
 
-    if True:
-        # Load the shots from the file
-        with open("all_shots_raw.pkl", "rb") as f:
-            shots = pickle.load(f)
+    # Check and correct the shots
+    shots = check_and_correct(shots)
 
-        
-        print(f"\nTotal shots loaded from file: {len(shots)}")
+    # Save to a file
+    with open("all_shots.pkl", "wb") as f:
+        pickle.dump(shots, f)
+    
+    # Identify b1, b2, b3
+    print(f"\nB1, B2, B3 identification started ...")
+    shots = extract_b1_b2_b3(shots)
 
-        # Check and correct the shots
-        shots = check_and_correct(shots)
-
-        # Save to a file
-        with open("all_shots.pkl", "wb") as f:
-            pickle.dump(shots, f)
-        
-        # identify b1, b2, b3
-        print(f"\nB1, B2, B3 identification started ...")
-        shots = extract_b1_b2_b3(shots)
-
-        print(f"\nTotal remaining after checks: {len(shots)}")
-        
-        # Save to a file
-        with open("all_shots.pkl", "wb") as f:
-            pickle.dump(shots, f)
+    print(f"\nTotal remaining after checks: {len(shots)}")
+    
+    # Save to a file
+    with open("all_shots.pkl", "wb") as f:
+        pickle.dump(shots, f)
     
     # # Load the shots from the file
     # with open("all_shots.pkl", "rb") as f:

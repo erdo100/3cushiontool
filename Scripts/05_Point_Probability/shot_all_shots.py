@@ -448,8 +448,8 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
 
 if __name__ == "__main__":
 
-    runsims = True
-    calculate_density = True
+    runsims = False
+    calculate_density = False
     resolution = 2 ** 14
     filebase = "2_18_shots"
     filename_results = filebase + "_results.parquet"
