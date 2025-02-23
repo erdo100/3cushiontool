@@ -48,8 +48,11 @@ class BilliardDataViewer:
         # Bind selection event to update plot
         self.shot_listbox.bind('<<ListboxSelect>>', self.update_plot)
         
+        # Initialize table width before setting up axes
+        self.table_width = 2.84  # Default table width
+        
         # Matplotlib Figure
-        self.fig, self.ax = plt.subplots()
+        self.fig, self.ax = plt.subplots(figsize=(10, 5))  # Ensure 2:1 aspect ratio
         self._setup_axes()  # Set up axes, grid, and background
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -67,10 +70,10 @@ class BilliardDataViewer:
     
     def _setup_axes(self):
         """Configure axis limits, ticks, grid, and background"""
-        self.ax.set_xlim(0, 2.840)
-        self.ax.set_ylim(0, 1.420)
-        self.ax.set_xticks(np.linspace(0, 2.840, 9))  # 9 ticks for x-axis
-        self.ax.set_yticks(np.linspace(0, 1.420, 5))  # 5 ticks for y-axis
+        self.ax.set_xlim(0, self.table_width)
+        self.ax.set_ylim(0, self.table_width / 2)  # Ensure 2:1 aspect ratio
+        self.ax.set_xticks(np.linspace(0, self.table_width, 9))  # 9 ticks for x-axis
+        self.ax.set_yticks(np.linspace(0, self.table_width / 2, 5))  # 5 ticks for y-axis
         self.ax.set_xticklabels([])  # Remove x-axis tick labels
         self.ax.set_yticklabels([])  # Remove y-axis tick labels
         self.ax.grid(True, linestyle='--', alpha=0.6)  # Add a grid with dashed lines
@@ -94,13 +97,14 @@ class BilliardDataViewer:
         # Populate the listbox with shots
         self.shot_listbox.delete(0, tk.END)
         for i, shot in enumerate(self.all_shots):
-            self.shot_listbox.insert(tk.END, f"{shot['filename']}: {shot['shotID']}")
+            self.shot_listbox.insert(tk.END, f"{shot['shotID']}: {shot['filename']}")
         
         self.shot_listbox.focus_set()  # Give the listbox keyboard focus so arrow keys work
-            # Select the first item in the listbox and update the plot
+        # Select the first item in the listbox and update the plot
         if self.all_shots:
             self.shot_listbox.selection_set(0)
             self.update_plot()
+    
     def update_plot(self, event=None):
         selected_indices = self.shot_listbox.curselection()
         if not selected_indices:
@@ -112,6 +116,7 @@ class BilliardDataViewer:
         # Only show the last selected item
         idx = selected_indices[-1]  # Get the last selected index
         shot = self.all_shots[idx]
+        self.ax.set_title(f"Shot ID: {shot['shotID']}")  # Set plot title to Shot ID
         for ball_num, ball_data in shot["balls"].items():
             color = BALL_COLORS[ball_num]
             self.ax.plot(ball_data["x"], ball_data["y"], 
