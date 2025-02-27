@@ -152,7 +152,6 @@ class Resolver:
             return resolver
 
         try:
-            print(f"Reading resolver from {RESOLVER_PATH}")
             resolver = cls.load(RESOLVER_PATH)
         except ClassValidationError:
             full_traceback = traceback.format_exc()

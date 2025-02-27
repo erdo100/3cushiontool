@@ -1,6 +1,4 @@
 from threecushion_shot import BilliardEnv
-import numpy as np
-import trace
 
 # physics parameters
 u_slide = 0.15
@@ -12,27 +10,29 @@ e_cushion = 0.9
 f_cushion = 0.15
 
 # create billard environment
-shot = BilliardEnv(u_slide, u_roll, u_sp_prop, u_ballball, e_ballball, e_cushion, f_cushion)
+shot = BilliardEnv(
+    u_slide, u_roll, u_sp_prop, u_ballball, e_ballball, e_cushion, f_cushion
+)
 
 # set up shot
-diamond = 2.84/8
-ball1xy = (2*diamond, 4*diamond)
-ball2xy = (2*diamond, 10*diamond)
-ball3xy = (6*diamond, 10*diamond)
+diamond = 2.84 / 8
+ball1xy = (0.5 * diamond, 0.5 * diamond)
+ball2xy = (2 * diamond, 10 * diamond)
+ball3xy = (6 * diamond, 10 * diamond)
 
-a = 0.0
-b = 0.
-phi = 90.0
+a = 0.5
+b = 0.0
+phi = 35.0
 v = 3.0
 theta = 0.0
 
-#for theta in np.linspace(0, 8, 17):
-#for b in np.linspace(-.5, 0.5, 11):
+# for theta in np.linspace(0, 8, 17):
+# for b in np.linspace(-.5, 0.5, 11):
 # prepare and simulate shot
 shot.prepare_new_shot(ball1xy, ball2xy, ball3xy, a, b, phi, v, theta)
 
 result = shot.simulate_shot()
 
-#print(result)
+# print(result)
 
 shot.plot_shot()

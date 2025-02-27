@@ -9,6 +9,8 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
+            "cwd": "${fileDirname}",
+            "pythonPath": "C:\\Users\\ersin\\miniconda3\\envs\\pooltool-dev\\python.exe",
         }
     ]
 }

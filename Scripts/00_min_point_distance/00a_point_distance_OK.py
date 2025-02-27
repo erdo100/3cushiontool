@@ -1,13 +1,18 @@
 #! /usr/bin/env python
-import pooltool as pt
-import numpy as np
-from pooltool.ruleset.three_cushion import is_point
-from pooltool.events.datatypes import Event, EventType
-from pooltool.events.filter import by_ball, by_time, by_type, filter_events, filter_ball, filter_type
-import matplotlib.pyplot as plt
-from scipy.signal import argrelextrema
-from scipy.interpolate import interp1d
 import time
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.interpolate import interp1d
+from scipy.signal import argrelextrema
+
+import pooltool as pt
+from pooltool.events.datatypes import EventType
+from pooltool.events.filter import (
+    filter_ball,
+    filter_type,
+)
+from pooltool.ruleset.three_cushion import is_point
 
 # from pooltool.physics.resolve.resolver import RESOLVER_CONFIG_PATH
 # print(RESOLVER_CONFIG_PATH)
@@ -63,20 +68,50 @@ cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
 # balls = pt.get_rack(pt.GameType.THREECUSHION, table=table)
 
 # Create balls
-wball = pt.Ball.create("white", xy=wpos, m=mball, R=Rball,
-              u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-              e_b=e_ballball, e_c=e_cushion,
-              f_c=f_cushion, g=grav)
+wball = pt.Ball.create(
+    "white",
+    xy=wpos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
-yball = pt.Ball.create("yellow", xy=ypos, m=mball, R=Rball,
-              u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-              e_b=e_ballball, e_c=e_cushion,
-              f_c=f_cushion, g=grav)
+yball = pt.Ball.create(
+    "yellow",
+    xy=ypos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
-rball = pt.Ball.create("red", xy=rpos, m=mball, R=Rball,
-              u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-              e_b=e_ballball, e_c=e_cushion,
-              f_c=f_cushion, g=grav)
+rball = pt.Ball.create(
+    "red",
+    xy=rpos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
 
 # Wrap it up as a System
@@ -93,43 +128,39 @@ phi = pt.aim.at_ball(system, "red", cut=cutangle0)
 system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin)
 
 
-
 # Shot analysis
 def eval_shot(shot: system):
-
     # Shot analysis and evaluation of results
     # Identify the balls b1=cueball, b2=objectball, b3=targetball
     #   - if no ball-ball event, b2 is the ball which closest to b1 after 3 cushions
     # Get the ball-ball events for each ball
     # Calculate point distance
-    # Calculate hit fractions for 
+    # Calculate hit fractions for
     #   - b1b2 hit to get first contact
     #   - b1b3 hit to get how safe was point
     #   - b2b3 hit to get how bad was the kiss
     #   - b2b3 hit to get how bad was the kiss
     #   - b1b3 hit before 3 cushions to get how bad was the shot
     #
-    
+
     # Player Ability  model:
-    # Shot quality is defined by the distribution (mean value and standard deviation) of shot parameters 
-    #     - hit direction horizontal, elevation, 
+    # Shot quality is defined by the distribution (mean value and standard deviation) of shot parameters
+    #     - hit direction horizontal, elevation,
     #     - hitpoint on cue ball
     #     - velocity
-    
+
     # These should be depending on player profile
-    # - Depending on player size the reach to cue ball influences the shot quality: 
-    #     - standard, no restriction, both feet on ground, 
+    # - Depending on player size the reach to cue ball influences the shot quality:
+    #     - standard, no restriction, both feet on ground,
     #     - one foot on ground
     #     - use of extension
     #     - use of bridge
     # - shot quality depending shot speed
     # - left / right hand
-    # - dominant eye dependency: 
-    #     - playing left / right spin 
+    # - dominant eye dependency:
+    #     - playing left / right spin
     #     - playing to b2 left / right
-    # - optical illusions by playing parallel or angled to cushions 
-    
-
+    # - optical illusions by playing parallel or angled to cushions
 
     # for evaluations and further actions (e.g. machine learning), we need to generate/store the following information
     # INITIAL DATA:
@@ -144,7 +175,7 @@ def eval_shot(shot: system):
     #       - hit fractions
     #       - ball-ball events for each ball string positions, velocities, angular velocities
     #   - for each cushion hit
-    #       - cushion hit positions, velocities, angular velocities, 
+    #       - cushion hit positions, velocities, angular velocities,
     #       - direction in
     #       - direction initial out
     #       - direction final out with offset from cushion hit point
@@ -159,7 +190,6 @@ def eval_shot(shot: system):
     #       - with hand (left/right) restriction 21 symmetries are available ==> reduction of total position by factor 2
     #       - without restriction 2 symmetries are available ==> reduction of total position by factor 4
 
-
     # NEXT STEPS:
     # - plot table with routes in figure
     # - Correct identification the balls b1, b2, b3 considering the also the case when no ball was hit
@@ -168,7 +198,7 @@ def eval_shot(shot: system):
         # identify the balls b1=cueball, b2=objectball, b3=targetball
 
         b1 = shot.cue.cue_ball_id
-        
+
         # identy b2 and b3.
         # if b1 hits only one ball, b2 is the ball which is hit by b1, b3 is the remaining ball
         # if b1 has no ball-ball event, b2 is the closest ball to b1 after 3 cushions, b3 is the remaining ball
@@ -181,23 +211,31 @@ def eval_shot(shot: system):
             # b2 is the first ball which is touched by b1
             b2 = [color for color in b1ballhits[0].ids if color != b1][0]
             # remaining ball is b3
-            b3 = [color for color in ("white", "yellow", "red") if color not in (b1, b2)][0]
+            b3 = [
+                color for color in ("white", "yellow", "red") if color not in (b1, b2)
+            ][0]
         else:
             # no ball contact, so we define b1 and b2
             # in future change it to the closest ball to the cueball after 3 cushions
             b2 = [color for color in ("white", "yellow") if color != b1][0]
             b3 = "red"
-        
+
         return [b1, b2, b3]
-    
+
     def get_ball_events(shot):
         # collect all hits for each ball
         b1events = filter_ball(shot.events, b1)
-        b1hit = filter_type(b1events, [EventType.BALL_BALL, EventType.BALL_LINEAR_CUSHION])
+        b1hit = filter_type(
+            b1events, [EventType.BALL_BALL, EventType.BALL_LINEAR_CUSHION]
+        )
         b2events = filter_ball(shot.events, b2)
-        b2hit = filter_type(b2events, [EventType.BALL_BALL, EventType.BALL_LINEAR_CUSHION])
+        b2hit = filter_type(
+            b2events, [EventType.BALL_BALL, EventType.BALL_LINEAR_CUSHION]
+        )
         b3events = filter_ball(shot.events, b3)
-        b3hit = filter_type(b3events, [EventType.BALL_BALL, EventType.BALL_LINEAR_CUSHION])
+        b3hit = filter_type(
+            b3events, [EventType.BALL_BALL, EventType.BALL_LINEAR_CUSHION]
+        )
 
         return [b1hit, b2hit, b3hit]
 
@@ -211,28 +249,29 @@ def eval_shot(shot: system):
         b1_hist = b1_obj.history_cts
         rvw_b1, s_b1, t_b1 = b1_hist.vectorize()
         b1_coords = rvw_b1[:, 0, :2]
-        
+
         b2_obj = shotcont.balls[b2]
         b2_hist = b2_obj.history_cts
         rvw_b2, s_b2, t_b2 = b2_hist.vectorize()
         b2_coords = rvw_b2[:, 0, :2]
-        
+
         b3_obj = shotcont.balls[b3]
         b3_hist = b3_obj.history_cts
         rvw_b3, s_b3, t_b3 = b3_hist.vectorize()
         b3_coords = rvw_b3[:, 0, :2]
 
-        all_ball_events = filter_type(shot.events, [EventType.BALL_BALL, EventType.BALL_LINEAR_CUSHION])
-    
+        all_ball_events = filter_type(
+            shot.events, [EventType.BALL_BALL, EventType.BALL_LINEAR_CUSHION]
+        )
+
         for event in all_ball_events:
-                
             event_time = event.time
             # Find the index to insert the event time
             index = np.searchsorted(t_b1, event_time)
 
             # Insert event time into t_b1
             t_b1 = np.insert(t_b1, index, event_time)
-            
+
             # find ball which was not involved in the event
             otherballs = tuple(set((b1, b2, b3)) - set(event.ids))
 
@@ -247,26 +286,41 @@ def eval_shot(shot: system):
                 elif id == b3:
                     event_xy = event.get_ball(id, initial=True).xyz[0:2]
                     b3_coords = np.insert(b3_coords, index, event_xy, axis=0)
-            
+
             for id in otherballs:
                 # linear interpolate the position of the ball which was not involved in the event
                 if id == b1:
-                    interp = interp1d([t_b1[index-1], t_b1[index]], [b1_coords[index-1], b1_coords[index]], axis=0, kind='linear')
+                    interp = interp1d(
+                        [t_b1[index - 1], t_b1[index]],
+                        [b1_coords[index - 1], b1_coords[index]],
+                        axis=0,
+                        kind="linear",
+                    )
                     xy = interp(event_time)
                     b1_coords = np.insert(b1_coords, index, xy, axis=0)
                 elif id == b2:
-                    interp = interp1d([t_b1[index-1], t_b1[index]], [b2_coords[index-1], b2_coords[index]], axis=0, kind='linear')
+                    interp = interp1d(
+                        [t_b1[index - 1], t_b1[index]],
+                        [b2_coords[index - 1], b2_coords[index]],
+                        axis=0,
+                        kind="linear",
+                    )
                     xy = interp(event_time)
                     b2_coords = np.insert(b2_coords, index, xy, axis=0)
                 elif id == b3:
-                    interp = interp1d([t_b1[index-1], t_b1[index]], [b3_coords[index-1], b3_coords[index]], axis=0, kind='linear')
+                    interp = interp1d(
+                        [t_b1[index - 1], t_b1[index]],
+                        [b3_coords[index - 1], b3_coords[index]],
+                        axis=0,
+                        kind="linear",
+                    )
                     xy = interp(event_time)
                     b3_coords = np.insert(b3_coords, index, xy, axis=0)
-                        
+
         return [t_b1, b1_coords, b2_coords, b3_coords]
 
     def ball_ball_distances():
-        # Calculate ball to ball distance        
+        # Calculate ball to ball distance
         b1b2dist = np.sqrt(np.sum((b1_coords - b2_coords) ** 2, axis=1))
         b1b3dist = np.sqrt(np.sum((b1_coords - b3_coords) ** 2, axis=1))
         b2b3dist = np.sqrt(np.sum((b2_coords - b3_coords) ** 2, axis=1))
@@ -279,7 +333,7 @@ def eval_shot(shot: system):
         if event.event_type != EventType.BALL_BALL:
             print("Event is not a ball-ball event.")
             return None
-        
+
         # Use ball_ball.ids to see which ball IDs are involved in the event
         ball1 = event.get_ball(event.ids[0], initial=True)
         ball2 = event.get_ball(event.ids[1], initial=True)
@@ -288,7 +342,7 @@ def eval_shot(shot: system):
         direction = pt.ptmath.unit_vector(ball1.vel - ball2.vel)
 
         cut_angle_radians = np.arccos(np.dot(direction, center_to_center))
-        cut_angle_degrees = cut_angle_radians * 180 / np.pi
+        # cut_angle_degrees = cut_angle_radians * 180 / np.pi
         hit_fraction = 1 - np.sin(cut_angle_radians)
 
         # print(f"{cut_angle_degrees=}", f"{hit_fraction=}")
@@ -297,26 +351,25 @@ def eval_shot(shot: system):
 
     def cushion_count(shot):
         # count the cushion hits before b1 hits b3
-        # 
+        #
 
         return cushion_count
-    
+
     def kisses(shot):
-        
         return kisses
-    
+
     def eval_point_distance(shot):
         # calculate point distance
 
         # calculate 3 closest distances to make a point
         # if the shot is a point, calculate the distance at the point of contact
         # if b1 hit b2 and b2 before hitting 3 cushions, set point_distance = 3000
-                
+
         # Initialize variables
         point_distance = (3000.0, 3000.0, 3000.0)
-        cushion_hit_count = 0          # Counter for ball_linear_cushion events
-        check_time = None               # Variable to store the time when conditions are met
-        b2_found = 0               # Flag for `b2` in agents
+        cushion_hit_count = 0  # Counter for ball_linear_cushion events
+        check_time = None  # Variable to store the time when conditions are met
+        b2_found = 0  # Flag for `b2` in agents
         hit_fraction = 0
         point_distance0 = 3000.0
         point_time = -1.0
@@ -324,40 +377,41 @@ def eval_shot(shot: system):
         # Iterate through events
         for event in b1hit:
             # Condition 1: Check if type is ball_linear_cushion
-            if event.event_type == 'ball_linear_cushion':
-                cushion_hit_count += 1   # Increment cushion hit counter
+            if event.event_type == "ball_linear_cushion":
+                cushion_hit_count += 1  # Increment cushion hit counter
                 # Store the time of the last `ball_linear_cushion` event
-            
+
             # Condition 2: Check if b2 exists in agents (excluding b1)
-            if b2 in event.ids and b2_found==False:
+            if b2 in event.ids and b2_found is False:
                 b2_found = b2_found + 1
-            
+
             # Check if the conditions are met
-            if cushion_hit_count >= 3 and b2_found == 1 and check_time == None:
+            if cushion_hit_count >= 3 and b2_found == 1 and check_time is None:
                 # We have met the requirements, store the time
                 check_time = event.time
-            
+
             if cushion_hit_count >= 3 and b2_found >= 1 and b3 in event.ids:
                 point_time = event.time
                 hit_fraction = eval_hit_fraction(shot, event)
-                point_distance0 = hit_fraction*Rball
+                point_distance0 = hit_fraction * Rball
                 print(point_distance0)
                 break
 
         if cushion_hit_count >= 3 and b2_found >= 1:
-            point_distance = eval_point_distance_3c_nopoint(check_time, point_distance0, point_time)
-            
+            point_distance = eval_point_distance_3c_nopoint(
+                check_time, point_distance0, point_time
+            )
 
-        elif b2hit != [] and b3hit == []:
-            # one ball was hit
-            # print('One ball was hit')
-            tmp = 0
+        # elif b2hit != [] and b3hit == []:
+        #     # one ball was hit
+        #     # print('One ball was hit')
+        #     tmp = 0
 
-        elif b2hit == [] and b3hit == []:
-            # no ball was hit
-            # print('No ball was hit')
-            tmp = 0
-        
+        # elif b2hit == [] and b3hit == []:
+        #     # no ball was hit
+        #     # print('No ball was hit')
+        #     tmp = 0
+
         return point_distance
 
     def eval_point_distance_3c_nopoint(check_time, point_distance0, point_time):
@@ -370,7 +424,6 @@ def eval_shot(shot: system):
 
         # Find local minima (relative minima) in the data
         minima_indices = argrelextrema(y, np.less)[0]
-        
 
         # When there is a point, then distance is limited by ball diameter
         # Therefore replace the minima of the point
@@ -384,11 +437,11 @@ def eval_shot(shot: system):
         # check if the distance was getting closer at the end, but not yet minimum
         if y[-2] >= y[-1]:
             # Add the last index to the minima_indices if we have negative slope at the end
-            minima_indices = np.append(minima_indices, len(y)-1)
+            minima_indices = np.append(minima_indices, len(y) - 1)
 
         # Ensure the array has 3 elements
         while len(minima_indices) < 3:
-            minima_indices = np.append(minima_indices, len(y)-1)
+            minima_indices = np.append(minima_indices, len(y) - 1)
 
         # Sort the minima by their values (y values) and get the 3 smallest
         sorted_minima_indices = minima_indices[np.argsort(y[minima_indices])][:3]
@@ -396,20 +449,19 @@ def eval_shot(shot: system):
 
         # Plot distances
         plt.figure(figsize=(8, 5))
-     
-        plt.plot(t_b1[tsel], b1b2dist[tsel], linestyle='-', color='r', label='Distance')
-        plt.plot(t_b1[tsel], b1b3dist[tsel], linestyle='-', color='b', label='Distance')
-        plt.plot(t_b1[tsel], b2b3dist[tsel], linestyle='-', color='k', label='Distance')
-        
-        plt.title('Distance Between Corresponding Points')
-        plt.xlabel('time in s')
-        plt.ylabel('Distance')
+
+        plt.plot(t_b1[tsel], b1b2dist[tsel], linestyle="-", color="r", label="Distance")
+        plt.plot(t_b1[tsel], b1b3dist[tsel], linestyle="-", color="b", label="Distance")
+        plt.plot(t_b1[tsel], b2b3dist[tsel], linestyle="-", color="k", label="Distance")
+
+        plt.title("Distance Between Corresponding Points")
+        plt.xlabel("time in s")
+        plt.ylabel("Distance")
         plt.grid(True)
         plt.legend()
         plt.show()
 
         return point_distance
-    
 
     # START of evaluation
     # identify the balls cueball, objectball, targetball and store in ballorder
@@ -418,7 +470,7 @@ def eval_shot(shot: system):
 
     (b1hit, b2hit, b3hit) = get_ball_events(shot)
     (t_b1, b1_coords, b2_coords, b3_coords) = add_events_to_coords(shot)
-    
+
     (b1b2dist, b1b3dist, b2b3dist) = ball_ball_distances()
     # calculate point distance
     point_distance = eval_point_distance(shot)

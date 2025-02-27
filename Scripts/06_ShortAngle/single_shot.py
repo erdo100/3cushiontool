@@ -1,5 +1,4 @@
 from threecushion_shot import BilliardEnv
-import numpy as np
 
 shot = BilliardEnv()
 

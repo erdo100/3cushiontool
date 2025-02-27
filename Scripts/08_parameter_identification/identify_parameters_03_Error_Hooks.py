@@ -5,16 +5,17 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import interp1d
-from scipy.optimize import minimize
+from scipy.optimize import differential_evolution
 from threecushion_shot import BilliardEnv
 
 print(sys.executable)
 
 # Get the current working directory
 current_folder = os.getcwd()
+print(f"The current folder is: {current_folder}")
 
 # Construct the file path
-file_path = os.path.join(current_folder, "20221225_2_Match_Ersin_Cemal.pkl")
+file_path = r"E:\PYTHON_PROJECTS\POOLTOOL\3cushiontool\Scripts\08_parameter_identification\20221225_2_Match_Ersin_Cemal.pkl"
 print(f"The current folder is: {file_path}")
 
 # Load shots from the pickle file
@@ -74,9 +75,20 @@ def initial_cut_angle(ball1_trajectory, ball2_trajectory):
     return phi
 
 
-def rms_difference(actual_x, actual_y, simulated_x, simulated_y):
-    # calculate the distance between the actual and simulated positions
-    rms = np.sum(np.sqrt((actual_x - simulated_x) ** 2 + (actual_y - simulated_y) ** 2))
+def calculate_weights(varlength):
+    # Calculate the quadratic weights
+    weights = np.arange(varlength) ** 2
+
+    # Normalize the weights to start from 10 and end at 1
+    weights = 10 - 9 * (weights - np.min(weights)) / (np.max(weights) - np.min(weights))
+    return weights
+
+
+def rms_difference(actual_x, actual_y, simulated_x, simulated_y, weights):
+    distances = np.sqrt((actual_x - simulated_x) ** 2 + (actual_y - simulated_y) ** 2)
+
+    rms = weights * distances
+    rms = np.sum(rms)
 
     return rms
 
@@ -138,7 +150,11 @@ def optimize_shot_parameters(shot, initial_params, ball1xy, ball2xy, ball3xy):
             simulated_x, simulated_y = interpolate_simulated_to_actual(
                 result[ball_col - 1], tsim, actual_times
             )
-            rms_total += rms_difference(actual_x, actual_y, simulated_x, simulated_y)
+
+            weights = calculate_weights(len(actual_x))
+            rms_total += rms_difference(
+                actual_x, actual_y, simulated_x, simulated_y, weights
+            )
 
             plt.plot(actual_x, actual_y, "-", color=ball_colors[ball_col])
             plt.plot(
@@ -157,12 +173,31 @@ def optimize_shot_parameters(shot, initial_params, ball1xy, ball2xy, ball3xy):
     bounds = [
         (-0.5, 0.5),  # a
         (-0.5, 0.5),  # b
-        (-1000, 1000),  # phi
-        (1, 6),  # v
-        (0, 0),
-    ]  # theta
+        (0, 360),  # phi
+        (1, 8),  # v
+        (0, 60),  # theta
+    ]
 
-    result = minimize(objective, initial_params, bounds=bounds)
+    result = differential_evolution(
+        objective,
+        bounds,
+        strategy="best1bin",
+        maxiter=1000,
+        popsize=15,
+        tol=0.01,
+        mutation=(0.5, 1),
+        recombination=0.7,
+        seed=None,
+        callback=None,
+        disp=True,
+        polish=True,
+        init="latinhypercube",
+        atol=0,
+        updating="deferred",
+        workers=1,
+        constraints=(),
+    )
+
     return result.x, result.fun
 
 
@@ -172,7 +207,7 @@ def optimize_physics_parameters():
             physics_params[key] = params[i]
 
         # Create billiard environment
-        shot_env = BilliardEnv(**physics_params)
+        # shot_env = BilliardEnv(**physics_params)
 
         total_rms = 0
         shot_i = 0
@@ -205,7 +240,7 @@ def optimize_physics_parameters():
 
     bounds = [physics_limits[key] for key in physics_params.keys()]
     initial_physics_params = list(physics_params.values())
-    result = minimize(objective, initial_physics_params, bounds=bounds)
+    result = differential_evolution(objective, bounds)
     return result.x, result.fun
 
 

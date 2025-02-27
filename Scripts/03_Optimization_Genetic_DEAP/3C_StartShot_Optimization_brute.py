@@ -1,12 +1,10 @@
 #! /usr/bin/env python
-import pooltool as pt
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
 import time
-from scipy.optimize import differential_evolution
-from scipy.optimize import dual_annealing
+
+import numpy as np
 from scipy.optimize import brute
+
+import pooltool as pt
 from pooltool.ruleset.three_cushion import is_point
 
 start_time = time.time()
@@ -23,8 +21,17 @@ cuespeed_stddev = 0.15
 cutangle_stddev = 5
 shotnums = 250
 
-def my_function(vars, system_template, sidespin_delta, vertspin_delta, cuespeed_delta, cutangle_delta, shotnums, Rball):
 
+def my_function(
+    vars,
+    system_template,
+    sidespin_delta,
+    vertspin_delta,
+    cuespeed_delta,
+    cutangle_delta,
+    shotnums,
+    Rball,
+):
     sidespin_avg, vertspin_avg, cuespeed_avg, cutangle_avg = vars
 
     # Initialize an empty list to store angles
@@ -40,12 +47,19 @@ def my_function(vars, system_template, sidespin_delta, vertspin_delta, cuespeed_
 
         points[i] = 0
         # check if shot is outside of squirt limit. If so, no point
-        if (0.5**2 >= (sidespin.item(i)**2 + vertspin.item(i)**2) and # This will ensure R^2 - a^2 - b^2 >= 0
-            cutangle.item(i) >= 1 and cutangle.item(i) <= 89):
-
+        if (
+            0.5**2
+            >= (
+                sidespin.item(i) ** 2 + vertspin.item(i) ** 2
+            )  # This will ensure R^2 - a^2 - b^2 >= 0
+            and cutangle.item(i) >= 1
+            and cutangle.item(i) <= 89
+        ):
             phi = pt.aim.at_ball(system, "red", cut=cutangle.item(i))
 
-            system.cue.set_state(a=sidespin.item(i), b=vertspin.item(i), V0=cuespeed.item(i), phi=phi)
+            system.cue.set_state(
+                a=sidespin.item(i), b=vertspin.item(i), V0=cuespeed.item(i), phi=phi
+            )
             system.reset_balls()
 
             # Evolve the shot.
@@ -53,15 +67,22 @@ def my_function(vars, system_template, sidespin_delta, vertspin_delta, cuespeed_
 
             points[i] = 1 if is_point(system) else 0
 
-    success = np.sum(points)/shotnums
+    success = np.sum(points) / shotnums
 
-    print(f"ss=", round(sidespin_avg,3),
-          ", vs=",round(vertspin_avg,3), 
-          ", speed=",round(cuespeed_avg,3), 
-          ", cut=",round(cutangle_avg,3), 
-          ", success=",round(success*100,3))
-    
-    return 1-success
+    print(
+        "ss=",
+        round(sidespin_avg, 3),
+        ", vs=",
+        round(vertspin_avg, 3),
+        ", speed=",
+        round(cuespeed_avg, 3),
+        ", cut=",
+        round(cutangle_avg, 3),
+        ", success=",
+        round(success * 100, 3),
+    )
+
+    return 1 - success
 
 
 # Ball Positions
@@ -105,20 +126,50 @@ cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
 # balls = pt.get_rack(pt.GameType.THREECUSHION, table=table)
 
 # Create balls
-wball = pt.Ball.create("white", xy=wpos, m=mball, R=Rball,
-                       u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                       e_b=e_ballball, e_c=e_cushion,
-                       f_c=f_cushion, g=grav)
+wball = pt.Ball.create(
+    "white",
+    xy=wpos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
-yball = pt.Ball.create("yellow", xy=ypos, m=mball, R=Rball,
-                       u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                       e_b=e_ballball, e_c=e_cushion,
-                       f_c=f_cushion, g=grav)
+yball = pt.Ball.create(
+    "yellow",
+    xy=ypos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
-rball = pt.Ball.create("red", xy=rpos, m=mball, R=Rball,
-                       u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                       e_b=e_ballball, e_c=e_cushion,
-                       f_c=f_cushion, g=grav)
+rball = pt.Ball.create(
+    "red",
+    xy=rpos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
 # Wrap it up as a System
 system_template = pt.System(
@@ -136,9 +187,18 @@ cutangle_delta = np.random.normal(loc=0, scale=cutangle_stddev, size=shotnums)
 result = brute(
     my_function,
     ranges=bounds,
-    Ns = 5,
-    args=(system_template, sidespin_delta, vertspin_delta, cuespeed_delta, cutangle_delta, shotnums, Rball),
-    full_output=True)
+    Ns=5,
+    args=(
+        system_template,
+        sidespin_delta,
+        vertspin_delta,
+        cuespeed_delta,
+        cutangle_delta,
+        shotnums,
+        Rball,
+    ),
+    full_output=True,
+)
 
 
 end_time = time.time()

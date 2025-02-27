@@ -1,6 +1,8 @@
 #! /usr/bin/env python
-import pooltool as pt
 import os
+
+import pooltool as pt
+
 # from pooltool.physics.resolve.resolver import RESOLVER_CONFIG_PATH
 # print(RESOLVER_CONFIG_PATH)
 
@@ -53,20 +55,50 @@ cue = pt.Cue(cue_ball_id="yellow", specs=cue_specs)
 # balls = pt.get_rack(pt.GameType.THREECUSHION, table=table)
 
 # Create balls
-wball = pt.Ball.create("white", xy=wpos, m=mball, R=Rball,
-              u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-              e_b=e_ballball, e_c=e_cushion,
-              f_c=f_cushion, g=grav)
+wball = pt.Ball.create(
+    "white",
+    xy=wpos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
-yball = pt.Ball.create("yellow", xy=ypos, m=mball, R=Rball,
-              u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-              e_b=e_ballball, e_c=e_cushion,
-              f_c=f_cushion, g=grav)
+yball = pt.Ball.create(
+    "yellow",
+    xy=ypos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
-rball = pt.Ball.create("red", xy=rpos, m=mball, R=Rball,
-              u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-              e_b=e_ballball, e_c=e_cushion,
-              f_c=f_cushion, g=grav)
+rball = pt.Ball.create(
+    "red",
+    xy=rpos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
 
 # Wrap it up as a System
@@ -80,7 +112,7 @@ system_template = pt.System(
 # Creates a deep copy of the template
 system = system_template.copy()
 
-phi = 55 #pt.aim.at_ball(system, "red", cut=25)
+phi = 55  # pt.aim.at_ball(system, "red", cut=25)
 system.cue.set_state(V0=cuespeed, phi=phi, a=sidespin, b=vertspin)
 
 # Evolve the shot.

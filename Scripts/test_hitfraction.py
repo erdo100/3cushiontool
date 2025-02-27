@@ -1,4 +1,5 @@
 import numpy as np
+
 import pooltool as pt
 
 # Build a table with default BILLIARD specs

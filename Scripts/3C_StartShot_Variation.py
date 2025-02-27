@@ -1,13 +1,11 @@
 #! /usr/bin/env python
-import pooltool as pt
-import numpy as np
-import matplotlib.pyplot as plt
 import time
-from pooltool.events.datatypes import Event, EventType
-from pooltool.events.filter import by_ball, by_time, by_type, filter_events
-from pooltool.system.datatypes import System
-from pooltool.ruleset.three_cushion import is_point
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+import pooltool as pt
+from pooltool.ruleset.three_cushion import is_point
 
 start_time = time.time()
 
@@ -83,20 +81,50 @@ cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
 
 
 # Create balls
-wball = pt.Ball.create("white", xy=wpos, m=mball, R=Rball,
-                       u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                       e_b=e_ballball, e_c=e_cushion,
-                       f_c=f_cushion, g=grav)
+wball = pt.Ball.create(
+    "white",
+    xy=wpos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
-yball = pt.Ball.create("yellow", xy=ypos, m=mball, R=Rball,
-                       u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                       e_b=e_ballball, e_c=e_cushion,
-                       f_c=f_cushion, g=grav)
+yball = pt.Ball.create(
+    "yellow",
+    xy=ypos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
-rball = pt.Ball.create("red", xy=rpos, m=mball, R=Rball,
-                       u_s=u_slide, u_r=u_roll, u_sp_proportionality=u_sp_prop, u_b=u_ballball,
-                       e_b=e_ballball, e_c=e_cushion,
-                       f_c=f_cushion, g=grav)
+rball = pt.Ball.create(
+    "red",
+    xy=rpos,
+    m=mball,
+    R=Rball,
+    u_s=u_slide,
+    u_r=u_roll,
+    u_sp_proportionality=u_sp_prop,
+    u_b=u_ballball,
+    e_b=e_ballball,
+    e_c=e_cushion,
+    f_c=f_cushion,
+    g=grav,
+)
 
 # Wrap it up as a System
 system_template = pt.System(
@@ -111,7 +139,9 @@ for i in range(shotnums):
     # Creates a deep copy of the template
     system = system_template.copy()
 
-    system.cue.set_state(V0=cuespeed.item(i), phi=phi.item(i), a=sidespin.item(i), b=vertspin.item(i))
+    system.cue.set_state(
+        V0=cuespeed.item(i), phi=phi.item(i), a=sidespin.item(i), b=vertspin.item(i)
+    )
 
     # Evolve the shot.
     pt.simulate(system, inplace=True)
@@ -119,7 +149,7 @@ for i in range(shotnums):
     points[i] = 1 if is_point(system) else 0
 
 
-successrate = round(np.sum(points)/shotnums*100,2)
+successrate = round(np.sum(points) / shotnums * 100, 2)
 print(f"Success rate: {successrate} %")
 
 
@@ -129,41 +159,71 @@ print(f"Execution time: {elapsed_time} seconds")
 
 fig1, ax1 = plt.subplots(4, 4, figsize=(12, 12))
 # ax1[0,0].scatter(sidespin[points==0], sidespin[points==0], color='red', label='0', s=5)
-ax1[0,0].scatter(sidespin[points==1], sidespin[points==1], color='black', label='1', s=5)
-#ax1[1,0].scatter(sidespin[points==0], vertspin[points==0], color='red', label='0', s=5)
-ax1[1,0].scatter(sidespin[points==1], vertspin[points==1], color='black', label='1', s=5)
-#ax1[2,0].scatter(sidespin[points==0], cuespeed[points==0], color='red', label='0', s=5)
-ax1[2,0].scatter(sidespin[points==1], cuespeed[points==1], color='black', label='1', s=5)
-#ax1[3,0].scatter(sidespin[points==0], phi_delta[points==0], color='red', label='0', s=5)
-ax1[3,0].scatter(sidespin[points==1], phi[points==1], color='black', label='1', s=5)
+ax1[0, 0].scatter(
+    sidespin[points == 1], sidespin[points == 1], color="black", label="1", s=5
+)
+# ax1[1,0].scatter(sidespin[points==0], vertspin[points==0], color='red', label='0', s=5)
+ax1[1, 0].scatter(
+    sidespin[points == 1], vertspin[points == 1], color="black", label="1", s=5
+)
+# ax1[2,0].scatter(sidespin[points==0], cuespeed[points==0], color='red', label='0', s=5)
+ax1[2, 0].scatter(
+    sidespin[points == 1], cuespeed[points == 1], color="black", label="1", s=5
+)
+# ax1[3,0].scatter(sidespin[points==0], phi_delta[points==0], color='red', label='0', s=5)
+ax1[3, 0].scatter(
+    sidespin[points == 1], phi[points == 1], color="black", label="1", s=5
+)
 
 
-#ax1[0,1].scatter(vertspin[points==0], sidespin[points==0], color='red', label='0', s=5)
-ax1[0,1].scatter(vertspin[points==1], sidespin[points==1], color='black', label='1', s=5)
-#ax1[1,1].scatter(vertspin[points==0], vertspin[points==0], color='red', label='0', s=5)
-ax1[1,1].scatter(vertspin[points==1], vertspin[points==1], color='black', label='1', s=5)
-#ax1[2,1].scatter(vertspin[points==0], cuespeed[points==0], color='red', label='0', s=5)
-ax1[2,1].scatter(vertspin[points==1], cuespeed[points==1], color='black', label='1', s=5)
-#ax1[3,1].scatter(vertspin[points==0], phi_delta[points==0], color='red', label='0', s=5)
-ax1[3,1].scatter(vertspin[points==1], phi[points==1], color='black', label='1', s=5)
+# ax1[0,1].scatter(vertspin[points==0], sidespin[points==0], color='red', label='0', s=5)
+ax1[0, 1].scatter(
+    vertspin[points == 1], sidespin[points == 1], color="black", label="1", s=5
+)
+# ax1[1,1].scatter(vertspin[points==0], vertspin[points==0], color='red', label='0', s=5)
+ax1[1, 1].scatter(
+    vertspin[points == 1], vertspin[points == 1], color="black", label="1", s=5
+)
+# ax1[2,1].scatter(vertspin[points==0], cuespeed[points==0], color='red', label='0', s=5)
+ax1[2, 1].scatter(
+    vertspin[points == 1], cuespeed[points == 1], color="black", label="1", s=5
+)
+# ax1[3,1].scatter(vertspin[points==0], phi_delta[points==0], color='red', label='0', s=5)
+ax1[3, 1].scatter(
+    vertspin[points == 1], phi[points == 1], color="black", label="1", s=5
+)
 
-#ax1[0,2].scatter(cuespeed[points==0], sidespin[points==0], color='red', label='0', s=5)
-ax1[0,2].scatter(cuespeed[points==1], sidespin[points==1], color='black', label='1', s=5)
-#ax1[1,2].scatter(cuespeed[points==0], vertspin[points==0], color='red', label='0', s=5)
-ax1[1,2].scatter(cuespeed[points==1], vertspin[points==1], color='black', label='1', s=5)
-#ax1[2,2].scatter(cuespeed[points==0], cuespeed[points==0], color='red', label='0', s=5)
-ax1[2,2].scatter(cuespeed[points==1], cuespeed[points==1], color='black', label='1', s=5)
-#ax1[3,2].scatter(cuespeed[points==0], phi_delta[points==0], color='red', label='0', s=5)
-ax1[3,2].scatter(cuespeed[points==1], phi[points==1], color='black', label='1', s=5)
+# ax1[0,2].scatter(cuespeed[points==0], sidespin[points==0], color='red', label='0', s=5)
+ax1[0, 2].scatter(
+    cuespeed[points == 1], sidespin[points == 1], color="black", label="1", s=5
+)
+# ax1[1,2].scatter(cuespeed[points==0], vertspin[points==0], color='red', label='0', s=5)
+ax1[1, 2].scatter(
+    cuespeed[points == 1], vertspin[points == 1], color="black", label="1", s=5
+)
+# ax1[2,2].scatter(cuespeed[points==0], cuespeed[points==0], color='red', label='0', s=5)
+ax1[2, 2].scatter(
+    cuespeed[points == 1], cuespeed[points == 1], color="black", label="1", s=5
+)
+# ax1[3,2].scatter(cuespeed[points==0], phi_delta[points==0], color='red', label='0', s=5)
+ax1[3, 2].scatter(
+    cuespeed[points == 1], phi[points == 1], color="black", label="1", s=5
+)
 
-#ax1[0,3].scatter(phi_delta[points==0], sidespin[points==0], color='red', label='0', s=5)
-ax1[0,3].scatter(phi[points==1], sidespin[points==1], color='black', label='1', s=5)
-#ax1[1,3].scatter(phi_delta[points==0], vertspin[points==0], color='red', label='0', s=5)
-ax1[1,3].scatter(phi[points==1], vertspin[points==1], color='black', label='1', s=5)
-#ax1[2,3].scatter(phi_delta[points==0], cuespeed[points==0], color='red', label='0', s=5)
-ax1[2,3].scatter(phi[points==1], cuespeed[points==1], color='black', label='1', s=5)
-#ax1[3,3].scatter(phi_delta[points==0], phi_delta[points==0], color='red', label='0', s=5)
-ax1[3,3].scatter(phi[points==1], phi[points==1], color='black', label='1', s=5)
+# ax1[0,3].scatter(phi_delta[points==0], sidespin[points==0], color='red', label='0', s=5)
+ax1[0, 3].scatter(
+    phi[points == 1], sidespin[points == 1], color="black", label="1", s=5
+)
+# ax1[1,3].scatter(phi_delta[points==0], vertspin[points==0], color='red', label='0', s=5)
+ax1[1, 3].scatter(
+    phi[points == 1], vertspin[points == 1], color="black", label="1", s=5
+)
+# ax1[2,3].scatter(phi_delta[points==0], cuespeed[points==0], color='red', label='0', s=5)
+ax1[2, 3].scatter(
+    phi[points == 1], cuespeed[points == 1], color="black", label="1", s=5
+)
+# ax1[3,3].scatter(phi_delta[points==0], phi_delta[points==0], color='red', label='0', s=5)
+ax1[3, 3].scatter(phi[points == 1], phi[points == 1], color="black", label="1", s=5)
 
 ax1[0, 0].set_ylabel("side spin")
 ax1[1, 0].set_ylabel("top spin")
@@ -175,5 +235,3 @@ ax1[3, 2].set_xlabel("speed")
 ax1[3, 3].set_xlabel("direction")
 plt.tight_layout()
 plt.show()
-
-

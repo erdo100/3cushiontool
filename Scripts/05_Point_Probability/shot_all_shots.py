@@ -1,24 +1,26 @@
-from SALib.sample import sobol
+import multiprocessing
+import time
+from multiprocessing import Pool
+
+import matplotlib.pyplot as plt
+import numba as nb
+import numpy as np
 import pandas as pd
 import plotly.express as px
-from threecushion_shot import BilliardEnv
-import numpy as np
-from scipy.stats import norm
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-from matplotlib.widgets import Slider, RadioButtons
-import time
-import numba as nb
+from matplotlib.widgets import RadioButtons, Slider
 from numba import prange
-import multiprocessing
-from multiprocessing import Pool
+from SALib.sample import sobol
+from scipy.stats import norm
 from sobol_seq import i4_sobol_generate
+from threecushion_shot import BilliardEnv
 
 
 # Define these at the top level for pickling
 def init_worker():
     global worker_env
     from threecushion_shot import BilliardEnv  # Import inside to avoid pickling issues
+
     worker_env = BilliardEnv()
 
 
@@ -27,8 +29,7 @@ def process_sample(sample):
     try:
         # Fixed parameters directly in the function
         worker_env.prepare_new_shot(
-            (0.5275, 0.71), (0.71, 0.71), (0.71, 2.13),
-            a, b, 3.5, cut, 0
+            (0.5275, 0.71), (0.71, 0.71), (0.71, 2.13), a, b, 3.5, cut, 0
         )
         return worker_env.simulate_shot()
     except Exception as e:
@@ -38,39 +39,42 @@ def process_sample(sample):
 
 def run_optimized_simulation(resolution):
     problem = {
-        'num_vars': 3,
-        'names': ['side', 'vert', 'cut'],
-        'bounds': [[-0.5, 0.5], [-0.5, 0.5], [-89, 89]]
+        "num_vars": 3,
+        "names": ["side", "vert", "cut"],
+        "bounds": [[-0.5, 0.5], [-0.5, 0.5], [-89, 89]],
     }
 
     runs = resolution * (2 * 3 + 2)
-    method = 'Sobol'
+    method = "Sobol"
 
-    if method == 'Sobol':
-        samples = i4_sobol_generate(problem['num_vars'], resolution)
-        samples = samples * (np.array([0.5, 0.5, 89]) - np.array([-0.5, -0.5, -89])) + np.array([-0.5, -0.5, -89])
-    elif method == 'UniformRandom':
-        samples = np.random.uniform(low=[-0.5, -0.5, -89], high=[0.5, 0.5, 89], size=(runs, 3))
+    if method == "Sobol":
+        samples = i4_sobol_generate(problem["num_vars"], resolution)
+        samples = samples * (
+            np.array([0.5, 0.5, 89]) - np.array([-0.5, -0.5, -89])
+        ) + np.array([-0.5, -0.5, -89])
+    elif method == "UniformRandom":
+        samples = np.random.uniform(
+            low=[-0.5, -0.5, -89], high=[0.5, 0.5, 89], size=(runs, 3)
+        )
 
-    shots_df = pd.DataFrame(samples, columns=problem['names'])
+    shots_df = pd.DataFrame(samples, columns=problem["names"])
     samples_list = [tuple(row) for row in samples]
-
 
     with Pool(processes=multiprocessing.cpu_count(), initializer=init_worker) as pool:
         results = pool.map(process_sample, samples_list, chunksize=1000)
 
-    shots_df['point'] = results
+    shots_df["point"] = results
 
     shots_df.to_parquet("2_17_shots_optimized.parquet")
     return shots_df
 
 
 def calculate_probability_map_old(
-        df: pd.DataFrame,
-        variables: list,
-        result_col: str,
-        stddev_dict: dict,
-        steps: float,
+    df: pd.DataFrame,
+    variables: list,
+    result_col: str,
+    stddev_dict: dict,
+    steps: float,
 ) -> tuple:
     """
     Calculate the probability density for each point in the n-dimensional space.
@@ -107,7 +111,7 @@ def calculate_probability_map_old(
         grid_axes.append(grid)
 
     # Create n-dimensional grid
-    mesh = np.meshgrid(*grid_axes, indexing='ij')
+    mesh = np.meshgrid(*grid_axes, indexing="ij")
     total_probability = np.zeros_like(mesh[0], dtype=np.float64)
 
     # Loop over all mesh grid points
@@ -152,12 +156,12 @@ def calculate_probability_map_old(
 
 
 def calculate_probability_map(
-        df: pd.DataFrame,
-        variables: list,
-        result_col: str,
-        stddev_dict: dict,
-        steps: float,
-        filename: str,
+    df: pd.DataFrame,
+    variables: list,
+    result_col: str,
+    stddev_dict: dict,
+    steps: float,
+    filename: str,
 ) -> tuple:
     # Input validation (same as before)
     missing_vars = [var for var in variables if var not in df.columns]
@@ -192,7 +196,7 @@ def calculate_probability_map(
         grid_shapes.append(len(grid))
 
     # Create meshgrid and flatten for parallel processing
-    mesh = np.meshgrid(*grid_axes, indexing='ij')
+    mesh = np.meshgrid(*grid_axes, indexing="ij")
     grid_points = np.stack([m.flatten() for m in mesh], axis=1)
     total_probability = np.zeros(grid_points.shape[0], dtype=np.float64)
 
@@ -201,15 +205,19 @@ def calculate_probability_map(
 
     # Precompute constants for PDF calculation
     sqrt_2pi = np.sqrt(2 * np.pi)
-    stddevs_squared = stddevs ** 2
+    stddevs_squared = stddevs**2
     coefficients = 1 / (stddevs * sqrt_2pi)
 
     # Call Numba-optimized function
     _compute_probabilities(
-        data_matrix, results,
-        grid_points, total_probability,
-        stddevs, coefficients, stddevs_squared,
-        *grid_shapes
+        data_matrix,
+        results,
+        grid_points,
+        total_probability,
+        stddevs,
+        coefficients,
+        stddevs_squared,
+        *grid_shapes,
     )
 
     # Reshape back to original grid shape
@@ -225,14 +233,14 @@ def calculate_probability_map(
 
 @nb.njit(nogil=True, fastmath=True, parallel=True)
 def _compute_probabilities(
-        data_matrix: np.ndarray,
-        results: np.ndarray,
-        grid_points: np.ndarray,
-        total_probability: np.ndarray,
-        stddevs: np.ndarray,
-        coefficients: np.ndarray,
-        stddevs_squared: np.ndarray,
-        *grid_shapes: tuple
+    data_matrix: np.ndarray,
+    results: np.ndarray,
+    grid_points: np.ndarray,
+    total_probability: np.ndarray,
+    stddevs: np.ndarray,
+    coefficients: np.ndarray,
+    stddevs_squared: np.ndarray,
+    *grid_shapes: tuple,
 ):
     n_vars, n_samples = data_matrix.shape
     n_points = grid_points.shape[0]
@@ -316,6 +324,7 @@ def load_density_from_parquet(parquet_path: str) -> tuple:
 
     return grid_axes, total_probability
 
+
 # 2. Interactive 3D Visualization with Plotly
 def plot_3d_probability_interactive(grid_axes, total_probability, variable_labels=None):
     """
@@ -327,7 +336,7 @@ def plot_3d_probability_interactive(grid_axes, total_probability, variable_label
         variable_labels (list): Optional labels for axes (e.g., ["v1", "v2", "v3"]).
     """
     # Create 3D coordinate grids
-    X, Y, Z = np.meshgrid(*grid_axes, indexing='ij')
+    X, Y, Z = np.meshgrid(*grid_axes, indexing="ij")
 
     # Flatten coordinates and total_probability for Plotly
     x_flat = X.flatten()
@@ -340,18 +349,20 @@ def plot_3d_probability_interactive(grid_axes, total_probability, variable_label
         variable_labels = [f"Variable {i + 1}" for i in range(len(grid_axes))]
 
     # Create Volume plot
-    fig = go.Figure(data=go.Volume(
-        x=x_flat,
-        y=y_flat,
-        z=z_flat,
-        value=P_flat,
-        isomin=0.1 * P_flat.max(),
-        isomax=P_flat.max(),
-        opacity=0.1,
-        surface_count=20,
-        colorscale='viridis',
-        caps=dict(x_show=False, y_show=False, z_show=False)
-    ))
+    fig = go.Figure(
+        data=go.Volume(
+            x=x_flat,
+            y=y_flat,
+            z=z_flat,
+            value=P_flat,
+            isomin=0.1 * P_flat.max(),
+            isomax=P_flat.max(),
+            opacity=0.1,
+            surface_count=20,
+            colorscale="viridis",
+            caps=dict(x_show=False, y_show=False, z_show=False),
+        )
+    )
 
     # Update layout
     fig.update_layout(
@@ -360,10 +371,11 @@ def plot_3d_probability_interactive(grid_axes, total_probability, variable_label
             yaxis_title=variable_labels[1],
             zaxis_title=variable_labels[2],
         ),
-        margin=dict(l=0, r=0, b=0, t=0)
+        margin=dict(l=0, r=0, b=0, t=0),
     )
 
     fig.show()
+
 
 def standalone_slice_viewer(grid_axes, total_probability, variables):
     """Interactive 2D slice viewer with dynamic slider labels."""
@@ -375,7 +387,7 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
     slice_idx = len(grid_axes[var_idx]) // 2
     x, y = grid_axes[1], grid_axes[2]
     slice_data = total_probability[slice_idx, :, :]
-    contour = ax.contourf(x, y, slice_data.T, cmap='viridis', levels=20)
+    contour = ax.contourf(x, y, slice_data.T, cmap="viridis", levels=20)
     cbar = fig.colorbar(contour, ax=ax)
     ax.set_xlabel(variables[1])
     ax.set_ylabel(variables[2])
@@ -384,11 +396,11 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
     ax_slider = plt.axes([0.1, 0.1, 0.65, 0.03])
     slider = Slider(
         ax=ax_slider,
-        label=f'{variables[var_idx]}',  # Initialize with current variable
+        label=f"{variables[var_idx]}",  # Initialize with current variable
         valmin=grid_axes[var_idx].min(),
         valmax=grid_axes[var_idx].max(),
         valinit=grid_axes[var_idx][slice_idx],
-        valstep=np.diff(grid_axes[var_idx])[0]
+        valstep=np.diff(grid_axes[var_idx])[0],
     )
 
     # Radio buttons
@@ -414,10 +426,10 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
             xl, yl = variables[0], variables[1]
 
         ax.clear()
-        ax.contourf(x, y, data.T, cmap='viridis', levels=20)
+        ax.contourf(x, y, data.T, cmap="viridis", levels=20)
         ax.set_xlabel(xl)
         ax.set_ylabel(yl)
-        ax.set_title(f'Slice at {variables[var_idx]} = {grid_axes[var_idx][idx]:.2f}')
+        ax.set_title(f"Slice at {variables[var_idx]} = {grid_axes[var_idx][idx]:.2f}")
         fig.canvas.draw_idle()
 
     def select_variable(label):
@@ -447,10 +459,9 @@ def standalone_slice_viewer(grid_axes, total_probability, variables):
 
 
 if __name__ == "__main__":
-
     runsims = False
     calculate_density = False
-    resolution = 2 ** 14
+    resolution = 2**14
     filebase = "2_18_shots"
     filename_results = filebase + "_results.parquet"
     filename_probability = filebase + "_probability.parquet"
@@ -464,41 +475,38 @@ if __name__ == "__main__":
 
             shots_df.to_parquet(filename_results)
 
-
         else:
             # Define the problem: 4 variables, each with 3 levels
             problem = {
-                'num_vars': 3,
-                'names': ['side', 'vert', 'cut'],  # Names for the variables
+                "num_vars": 3,
+                "names": ["side", "vert", "cut"],  # Names for the variables
                 # Bounds for each variable
-                'bounds': [[-0.5, 0.5], # a
-                           [-0.5, 0.5], # b
-                           #[2, 7],      # velocity
-                           [-89, 89]    # cut angle
-                           ]
+                "bounds": [
+                    [-0.5, 0.5],  # a
+                    [-0.5, 0.5],  # b
+                    # [2, 7],      # velocity
+                    [-89, 89],  # cut angle
+                ],
             }
 
-
-
-            runs = resolution*(2*3+2)
-            method = 'Sobol'
+            runs = resolution * (2 * 3 + 2)
+            method = "Sobol"
             # method = 'UniformRandom'
 
-            if method == 'Sobol':
+            if method == "Sobol":
                 # Generate the Sobol design using Sobol sampling
                 samples = sobol.sample(problem, resolution)
 
-            elif method == 'UniformRandom':
+            elif method == "UniformRandom":
                 # Generate random uniform samples within the bounds for each variable
                 samples = np.random.uniform(
                     low=[-0.5, -0.5, -89],  # Lower bounds for each variable
-                    high=[0.5, 0.5, 89],     # Upper bounds for each variable
-                    size=(runs, problem['num_vars'])  # Number of samples and variables
+                    high=[0.5, 0.5, 89],  # Upper bounds for each variable
+                    size=(runs, problem["num_vars"]),  # Number of samples and variables
                 )
 
-
             # Convert to a pandas DataFrame for easier inspection
-            shots_df = pd.DataFrame(samples, columns=problem['names'])
+            shots_df = pd.DataFrame(samples, columns=problem["names"])
 
             # Print the size (number of samples and number of variables)
             print("Size of the samples array:", samples.shape)
@@ -506,10 +514,10 @@ if __name__ == "__main__":
             env = BilliardEnv()
 
             for i in range(runs):
-                a = shots_df.loc[i, 'side']
-                b = shots_df.loc[i, 'vert']
+                a = shots_df.loc[i, "side"]
+                b = shots_df.loc[i, "vert"]
                 v = 3.5
-                cut = shots_df.loc[i, 'cut']
+                cut = shots_df.loc[i, "cut"]
                 theta = 0
 
                 ball1xy = (0.5275, 0.71)
@@ -519,19 +527,24 @@ if __name__ == "__main__":
                 env.prepare_new_shot(ball1xy, ball2xy, ball3xy, a, b, v, cut, theta)
 
                 point = env.simulate_shot()
-                shots_df.at[i, 'point'] = point
+                shots_df.at[i, "point"] = point
 
-                if (i+1) % 200000 == 0:
-                    print((time.time() - start)/3600,"h: ", i ," runs")
-                    filtered_df = shots_df[shots_df['point'] == 1]
+                if (i + 1) % 200000 == 0:
+                    print((time.time() - start) / 3600, "h: ", i, " runs")
+                    filtered_df = shots_df[shots_df["point"] == 1]
                     # Create an interactive 3D scatter plot
-                    fig = px.scatter_3d(filtered_df, x='side', y='cut', z='vert', title="Total runs=" + str(i))
+                    fig = px.scatter_3d(
+                        filtered_df,
+                        x="side",
+                        y="cut",
+                        z="vert",
+                        title="Total runs=" + str(i),
+                    )
                     fig.show()
-
 
             # Speichern im Parquet-Format
             shots_df.to_parquet("2_12_shots.parquet")
-            print('Dataframe saved to parquet file')
+            print("Dataframe saved to parquet file")
 
         # print runtime
         print("Runtime of run_optimized_simulation is", time.time() - start)
@@ -546,9 +559,9 @@ if __name__ == "__main__":
         # Compute density
         grid_axes, total_probability = calculate_probability_map(
             df=shots_df,
-            variables=['side', 'vert', 'cut'],
-            result_col='point',
-            stddev_dict={'side': 0.02, 'vert': 0.02, 'cut': 3},
+            variables=["side", "vert", "cut"],
+            result_col="point",
+            stddev_dict={"side": 0.02, "vert": 0.02, "cut": 3},
             steps=100,
             filename=filename_probability,
         )
@@ -560,14 +573,13 @@ if __name__ == "__main__":
         # Load density data from file:
         grid_axes, total_probability = load_density_from_parquet(filename_probability)
 
-
-    variables=['side spin', 'vertical spin', 'cut angle']
+    variables = ["side spin", "vertical spin", "cut angle"]
 
     # Visualize interactively
     plot_3d_probability_interactive(
         grid_axes=grid_axes,
         total_probability=total_probability,
-        variable_labels=variables  # Optional: ["Temperature", "Pressure", "Velocity"]
+        variable_labels=variables,  # Optional: ["Temperature", "Pressure", "Velocity"]
     )
 
     standalone_slice_viewer(grid_axes, total_probability, variables)
