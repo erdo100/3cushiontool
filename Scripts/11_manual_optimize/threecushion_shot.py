@@ -75,7 +75,16 @@ class BilliardEnv:
 
         self.cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
 
-    def prepare_new_shot(self, ball1xy, ball2xy, ball3xy, a, b, phi, v, theta):
+    def prepare_new_shot(self, ball_cols, ball_xy_ini, a, b, phi, v, theta):
+        
+        for ball_col, ball_xy in ball_xy_ini.items():
+            if ball_col == "white":
+                ball1xy = ball_xy
+            elif ball_col == "yellow":
+                ball2xy = ball_xy
+            elif ball_col == "red":
+                ball3xy = ball_xy
+
         # Create balls in new positions
         wball = pt.Ball.create(
             "white",
@@ -122,14 +131,18 @@ class BilliardEnv:
             g=self.grav,
         )
 
+        # modify the cue ball in self.cue
+        self.cue.cue_ball_id = ball_cols[0]
+
+        # phi = pt.aim.at_ball(self.system, "red", cut=cut)
+        # set the cue
+        self.cue.set_state(a=a, b=b, V0=v, phi=phi, theta=theta)
+
         # Wrap it up as a System
         self.system = pt.System(
             table=self.table, balls=(wball, yball, rball), cue=self.cue
         )
 
-        # phi = pt.aim.at_ball(self.system, "red", cut=cut)
-        # set the cue
-        self.cue.set_state(a=a, b=b, V0=v, phi=phi, theta=theta)
 
     def step(self, action):
         self.prepare_new_shot(a, b, cut, v, theta)
