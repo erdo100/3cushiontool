@@ -1,5 +1,3 @@
-import os
-import pickle
 import sys
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,49 +7,9 @@ from tkinter import Tk, Scale, HORIZONTAL, Label, Button, Frame, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from pooltool.ruleset.three_cushion import is_point
 from billiardenv import BilliardEnv
-import time
+from helper_funcs import read_shotfile, interpolate_simulated_to_actual, loss_func, save_parameters, load_parameters
+from slider_definitions import create_ballball_sliders, create_physics_sliders
 
-    
-def read_shotfile():
-
-    # pick file woth UI
-    file_path = r"E:\PYTHON_PROJECTS\POOLTOOL\3cushiontool\Scripts\20221225_2_Match_Ersin_Cemal.pkl"
-    file_path = filedialog.askopenfilename()
-
-    # Load shots from the pickle file
-    with open(file_path, "rb") as f:
-        shots_actual = pickle.load(f)
-
-    # Swap x and y axes
-    for shot_actual in shots_actual:
-        for ball in shot_actual["balls"].values():
-            ball["x"], ball["y"] = np.array(ball["y"]), np.array(ball["x"])
-
-    return shots_actual
-
-def loss_func(actual_x, actual_y, simulated_x, simulated_y):
-    distances = np.sqrt((actual_x - simulated_x) ** 2 + (actual_y - simulated_y) ** 2)
-    rms = np.sqrt(np.mean(distances ** 2))
-    return rms
-
-def interpolate_simulated_to_actual(simulated, tsim, actual_times):
-    interp_func_x = interp1d(
-        tsim,
-        simulated[:, 0],
-        kind="linear",
-        bounds_error=False,
-        fill_value=(simulated[0, 0], simulated[-1, 0]),
-    )
-    interp_func_y = interp1d(
-        tsim,
-        simulated[:, 1],
-        kind="linear",
-        bounds_error=False,
-        fill_value=(simulated[0, 1], simulated[-1, 1]),
-    )
-    interpolated_x = interp_func_x(actual_times)
-    interpolated_y = interp_func_y(actual_times)
-    return interpolated_x, interpolated_y
 
 def plot_settings():
     plt.clf()  # Clear the current figure
@@ -79,30 +37,17 @@ def get_ball_ids(shot_actual):
     ball_cols[1] = color_mapping.get(ball_ids[1])  # Assign color
     ball_ids[2] = list(shot_actual["balls"].keys())[2]
     ball_cols[2] = color_mapping.get(ball_ids[2])  # Assign color
-
-    print("get_ball_ids:   B1: ", ball_ids[0], ball_cols[0])
-    print("get_ball_ids:   B2: ", ball_ids[1], ball_cols[1])
-    print("get_ball_ids:   B3: ", ball_ids[2], ball_cols[2])
-    print(" ")
-    
     
     return ball_ids, ball_cols
 
 def get_ball_positions(shot_actual):
 
     ball_ids, ball_cols = get_ball_ids(shot_actual)
-    print("get_ball_positions:   ball_ids: ", ball_ids)
-    print("get_ball_positions:   ball_cols: ", ball_cols)
 
     balls_xy_ini = {}
     balls_xy_ini[0] = (shot_actual["balls"][1]["x"][0], shot_actual["balls"][1]["y"][0])
     balls_xy_ini[1] = (shot_actual["balls"][2]["x"][0], shot_actual["balls"][2]["y"][0])
     balls_xy_ini[2] = (shot_actual["balls"][3]["x"][0], shot_actual["balls"][3]["y"][0])
-
-    print("get_ball_positions:   ball 1: ", ball_cols[0], "Pos:", balls_xy_ini[0])
-    print("get_ball_positions:   ball 2: ", ball_cols[1], "Pos:", balls_xy_ini[1])
-    print("get_ball_positions:   ball 3: ", ball_cols[2], "Pos:", balls_xy_ini[2])
-    print(" ")
 
     return balls_xy_ini, ball_ids, ball_cols
 
@@ -114,7 +59,6 @@ def plot_initial_positions(ball_xy_ini):
 def plot_current_shot(colind, actual_x, actual_y, simulated_x, simulated_y):
     colortable = ["white", "yellow", "red"]
     colname = colortable[colind]
-    print("Col: ", colind, "Colname: ", colname)
     circle = plt.Circle((simulated_x[0], simulated_y[0]), 0.0615 / 2, color=colname, fill=True)
     plt.gca().add_patch(circle)
     plt.plot(actual_x, actual_y, "--", color=colname, linewidth=1)
@@ -166,13 +110,8 @@ def update_plot(event=None):
         # plot_current_shot(ball_col, actual_x, actual_y, simulated_x, simulated_y)
         
         colind = ball_col - 1
-        print("update_plot:  Colind: ", colind)
         plot_current_shot(colind, actual_x, actual_y, result[colind][:,0], result[colind][:,1])
         
-    print(" ")
-        
-
-
     plt.gca().set_title(f"ShotID: {shot_actual['shotID']}, Loss: {total_loss:.2f}\n"
                     f"a: {round(a, 2)}\n"
                     f"b: {round(b, 2)}\n"
@@ -190,6 +129,7 @@ def on_closing():
 def show_system():
     system = update_plot()
     pt.show(system)
+
 
 shots_actual = read_shotfile()
 
@@ -280,45 +220,21 @@ shot_theta_slider.set(shot_param['theta'])
 shot_theta_slider.pack()
 
 # Ball-ball parameter sliders
-ballball_a_slider = Scale(slider_frame, from_=0, to=0.02, resolution=0.0001, orient=HORIZONTAL, label="Ball-Ball a", length=slider_length, command=update_plot)
-ballball_a_slider.set(ballball_hit_params['a'])
-ballball_a_slider.pack()
-
-ballball_b_slider = Scale(slider_frame, from_=0, to=0.2, resolution=0.001, orient=HORIZONTAL, label="Ball-Ball b", length=slider_length, command=update_plot)
-ballball_b_slider.set(ballball_hit_params['b'])
-ballball_b_slider.pack()
-
-ballball_c_slider = Scale(slider_frame, from_=0, to=2, resolution=0.01, orient=HORIZONTAL, label="Ball-Ball c", length=slider_length, command=update_plot)
-ballball_c_slider.set(ballball_hit_params['c'])
-ballball_c_slider.pack()
+ballball_a_slider, ballball_b_slider, ballball_c_slider = create_ballball_sliders(slider_frame, ballball_hit_params, update_plot)
 
 # Physics parameter sliders
-physics_u_slide_slider = Scale(slider_frame, from_=0, to=1, resolution=0.001, orient=HORIZONTAL, label="Physics u_slide", length=slider_length, command=update_plot)
-physics_u_slide_slider.set(physics_params['u_slide'])
-physics_u_slide_slider.pack()
-
-physics_u_roll_slider = Scale(slider_frame, from_=0, to=0.1, resolution=0.001, orient=HORIZONTAL, label="Physics u_roll", length=slider_length, command=update_plot)
-physics_u_roll_slider.set(physics_params['u_roll'])
-physics_u_roll_slider.pack()
-
-physics_u_sp_prop_slider = Scale(slider_frame, from_=0, to=1, resolution=0.01, orient=HORIZONTAL, label="Physics u_sp_prop", length=slider_length, command=update_plot)
-physics_u_sp_prop_slider.set(physics_params['u_sp_prop'])
-physics_u_sp_prop_slider.pack()
-
-physics_e_ballball_slider = Scale(slider_frame, from_=0, to=1, resolution=0.001, orient=HORIZONTAL, label="Physics e_ballball", length=slider_length, command=update_plot)
-physics_e_ballball_slider.set(physics_params['e_ballball'])
-physics_e_ballball_slider.pack()
-
-physics_e_cushion_slider = Scale(slider_frame, from_=0, to=1, resolution=0.001, orient=HORIZONTAL, label="Physics e_cushion", length=slider_length, command=update_plot)
-physics_e_cushion_slider.set(physics_params['e_cushion'])
-physics_e_cushion_slider.pack()
-
-physics_f_cushion_slider = Scale(slider_frame, from_=0, to=1, resolution=0.001, orient=HORIZONTAL, label="Physics f_cushion", length=slider_length, command=update_plot)
-physics_f_cushion_slider.set(physics_params['f_cushion'])
-physics_f_cushion_slider.pack()
+physics_u_slide_slider, physics_u_roll_slider, physics_u_sp_prop_slider, physics_e_ballball_slider, physics_e_cushion_slider, physics_f_cushion_slider = create_physics_sliders(slider_frame, physics_params, update_plot)
 
 # Add a button to show the system
 show_button = Button(slider_frame, text="Show System", command=show_system)
 show_button.pack()
+
+# Add a button to save the parameters
+save_button = Button(slider_frame, text="Save Parameters", command=lambda: save_parameters(ballball_hit_params, physics_params))
+save_button.pack()
+
+# Add a button to load the parameters
+load_button = Button(slider_frame, text="Load Parameters", command=lambda: load_parameters(slider_frame, update_plot, ballball_a_slider, ballball_b_slider, ballball_c_slider, physics_u_slide_slider, physics_u_roll_slider, physics_u_sp_prop_slider, physics_e_ballball_slider, physics_e_cushion_slider, physics_f_cushion_slider))
+load_button.pack()
 
 root.mainloop()
