@@ -8,166 +8,9 @@ import pooltool as pt
 from tkinter import Tk, Scale, HORIZONTAL, Label, Button, Frame, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from pooltool.ruleset.three_cushion import is_point
+from billiardenv import BilliardEnv
+import time
 
-
-class BilliardEnv:
-    def __init__(
-        self, u_slide, u_roll, u_sp_prop, u_ballball, e_ballball, e_cushion, f_cushion
-    ):
-        self.table_width = 2.84  # Table dimensions (meters)
-        self.table_height = 1.42
-        self.series_length = 0
-        self.current_step = 0
-        self.episode_rewards = []
-
-        # Ball Positions
-        self.ball1_ini = (0.1, 0, 1)  # White
-        self.ball2_ini = (0.5, 0.5)  # Yellow
-        self.ball3_ini = (1.0, 1.0)  # Red
-
-        # define the properties
-        self.u_slide = u_slide
-        self.u_roll = u_roll
-        self.u_sp_prop = u_sp_prop
-        self.u_ballball = u_ballball
-        self.e_ballball = e_ballball
-        self.e_cushion = e_cushion
-        self.f_cushion = f_cushion
-
-        self.grav = 9.81
-
-        self.mball = 0.210
-        self.Rball = 61.5 / 1000 / 2
-
-        cue_mass = 0.576
-        cue_len = 1.47
-        cue_tip_R = 21.21 / 2000  # radius nickel=21.21 mm, dime=17.91 mm
-        cue_tip_mass = 0.008
-
-        # Build a table with default BILLIARD specs
-        self.table = pt.Table.default(pt.TableType.BILLIARD)
-
-        # create the cue
-        cue_specs = pt.objects.CueSpecs(
-            M=cue_mass,
-            length=cue_len,
-            tip_radius=cue_tip_R,
-            end_mass=cue_tip_mass,
-        )
-
-        self.cue = pt.Cue(cue_ball_id="white", specs=cue_specs)
-
-    def prepare_new_shot(self, ball_cols, ball_xy_ini, a, b, phi, v, theta):
-        
-        for ball_col, ball_xy in ball_xy_ini.items():
-            if ball_col == "white":
-                ball1xy = ball_xy
-            elif ball_col == "yellow":
-                ball2xy = ball_xy
-            elif ball_col == "red":
-                ball3xy = ball_xy
-
-        # Create balls in new positions
-        wball = pt.Ball.create(
-            "white",
-            xy=ball1xy,
-            m=self.mball,
-            R=self.Rball,
-            u_s=self.u_slide,
-            u_r=self.u_roll,
-            u_sp_proportionality=self.u_sp_prop,
-            u_b=self.u_ballball,
-            e_b=self.e_ballball,
-            e_c=self.e_cushion,
-            f_c=self.f_cushion,
-            g=self.grav,
-        )
-
-        yball = pt.Ball.create(
-            "yellow",
-            xy=ball3xy,
-            m=self.mball,
-            R=self.Rball,
-            u_s=self.u_slide,
-            u_r=self.u_roll,
-            u_sp_proportionality=self.u_sp_prop,
-            u_b=self.u_ballball,
-            e_b=self.e_ballball,
-            e_c=self.e_cushion,
-            f_c=self.f_cushion,
-            g=self.grav,
-        )
-        
-        rball = pt.Ball.create(
-            "red",
-            xy=ball2xy,
-            m=self.mball,
-            R=self.Rball,
-            u_s=self.u_slide,
-            u_r=self.u_roll,
-            u_sp_proportionality=self.u_sp_prop,
-            u_b=self.u_ballball,
-            e_b=self.e_ballball,
-            e_c=self.e_cushion,
-            f_c=self.f_cushion,
-            g=self.grav,
-        )
-
-        # modify the cue ball in self.cue
-        self.cue.cue_ball_id = ball_cols[0]
-
-        # phi = pt.aim.at_ball(self.system, "red", cut=cut)
-        # set the cue
-        self.cue.set_state(a=a, b=b, V0=v, phi=phi, theta=theta)
-
-        # Wrap it up as a System
-        self.system = pt.System(
-            table=self.table, balls=(wball, yball, rball), cue=self.cue
-        )
-
-    def get_ball_routes(self):
-        shot = self.system
-        shotcont = pt.continuize(shot, dt=0.01, inplace=False)
-        white = shotcont.balls["white"]
-        white_history = white.history_cts
-        white_rvw, s_cue, tsim = white_history.vectorize()
-        yellow = shotcont.balls["yellow"]
-        yellow_history = yellow.history_cts
-        yellow_rvw, s_cue, tsim = yellow_history.vectorize()
-        red = shotcont.balls["red"]
-        red_history = red.history_cts
-        red_rvw, s_cue, tsim = red_history.vectorize()
-
-        # We can grab the xy-coordinates for each ball from the `rvw` array by with the following.
-        results = {}
-        results[0] = white_rvw[:, 0, :2]
-        results[1] = yellow_rvw[:, 0, :2]
-        results[2] = red_rvw[:, 0, :2]
-
-        return results, tsim
-
-    def simulate_shot(self, a, b, c):
-        # run the physics model
-        point = 0
-
-        engine = pt.physics.PhysicsEngine()  # start with default
-        engine.resolver.stick_ball.squirt_throttle = 0.0
-        engine.resolver.ball_linear_cushion = pt.physics.ball_lcushion_models[
-            pt.physics.BallLCushionModel.MATHAVAN_2010
-        ]() # HAN_2005 and MATHAVAN_2010
-        # Friction fit curve u_b = a + b * exp(-c * v_rel) used in David Alciatore's TP A-14
-        engine.resolver.ball_ball.friction.a = a
-        engine.resolver.ball_ball.friction.b = b
-        engine.resolver.ball_ball.friction.c = c
-    
-        # Pass the engine to your simulate call.
-        pt.simulate(self.system, engine=engine, inplace=True)
-
-        results, tsim = self.get_ball_routes()
-        if is_point(self.system):
-            point = 1
-
-        return point, results, tsim, self.system
     
 def read_shotfile():
 
@@ -224,43 +67,62 @@ def plot_settings():
     plt.yticks(np.arange(0, 2.84 + grid_size, grid_size))
     plt.grid(True)
 
-def plot_current_shot(col, actual_x, actual_y, simulated_x, simulated_y):
-    colortable = ["white", "yellow", "red"]
-    colname = colortable[col - 1]
-    plt.plot(actual_x, actual_y, "--", color=colname, linewidth=1)
-    plt.plot(simulated_x, simulated_y, "-", color=colname, linewidth=3)
-
 def get_ball_ids(shot_actual):
     color_mapping = {1: "white", 2: "yellow", 3: "red"}
 
     ball_ids = {}
     ball_cols = {}
     # Get the second entry (based on insertion order)
-    ball_ids[0] = list(shot_actual["balls"].keys())[0]
+    ball_ids[0] = list(shot_actual["balls"].keys())[0] # This is the cue ball
     ball_cols[0] = color_mapping.get(ball_ids[0])  # Assign color
     ball_ids[1] = list(shot_actual["balls"].keys())[1]
     ball_cols[1] = color_mapping.get(ball_ids[1])  # Assign color
     ball_ids[2] = list(shot_actual["balls"].keys())[2]
     ball_cols[2] = color_mapping.get(ball_ids[2])  # Assign color
+
+    print("get_ball_ids:   B1: ", ball_ids[0], ball_cols[0])
+    print("get_ball_ids:   B2: ", ball_ids[1], ball_cols[1])
+    print("get_ball_ids:   B3: ", ball_ids[2], ball_cols[2])
+    print(" ")
+    
     
     return ball_ids, ball_cols
 
 def get_ball_positions(shot_actual):
 
     ball_ids, ball_cols = get_ball_ids(shot_actual)
+    print("get_ball_positions:   ball_ids: ", ball_ids)
+    print("get_ball_positions:   ball_cols: ", ball_cols)
+
     balls_xy_ini = {}
-    for ball_id, ball_data in shot_actual["balls"].items():
-        balls_xy_ini[ball_cols[ball_id-1]] = (ball_data["x"][0], ball_data["y"][0])
+    balls_xy_ini[0] = (shot_actual["balls"][1]["x"][0], shot_actual["balls"][1]["y"][0])
+    balls_xy_ini[1] = (shot_actual["balls"][2]["x"][0], shot_actual["balls"][2]["y"][0])
+    balls_xy_ini[2] = (shot_actual["balls"][3]["x"][0], shot_actual["balls"][3]["y"][0])
+
+    print("get_ball_positions:   ball 1: ", ball_cols[0], "Pos:", balls_xy_ini[0])
+    print("get_ball_positions:   ball 2: ", ball_cols[1], "Pos:", balls_xy_ini[1])
+    print("get_ball_positions:   ball 3: ", ball_cols[2], "Pos:", balls_xy_ini[2])
+    print(" ")
 
     return balls_xy_ini, ball_ids, ball_cols
 
 def plot_initial_positions(ball_xy_ini):
     for ball_col, ball_xy in ball_xy_ini.items():
-        circle = plt.Circle(ball_xy, 0.0615 / 2, color=ball_col, fill=False)
+        circle = plt.Circle(ball_xy, 0.0615 / 2, color=ball_col, fill=True)
         plt.gca().add_patch(circle)
 
+def plot_current_shot(colind, actual_x, actual_y, simulated_x, simulated_y):
+    colortable = ["white", "yellow", "red"]
+    colname = colortable[colind]
+    print("Col: ", colind, "Colname: ", colname)
+    circle = plt.Circle((simulated_x[0], simulated_y[0]), 0.0615 / 2, color=colname, fill=True)
+    plt.gca().add_patch(circle)
+    plt.plot(actual_x, actual_y, "--", color=colname, linewidth=1)
+    plt.plot(simulated_x, simulated_y, "-", color=colname, linewidth=3)
+
 def update_plot(event=None):
-    global cueball_id, a, b, phi, v, theta, a_ballball, b_ballball, c_ballball, u_slide, u_roll, u_sp_prop, e_ballball, e_cushion, f_cushion, u_ballball, shot_actual, ball1xy, ball2xy, ball3xy
+    global cueball_id, a, b, phi, v, theta, a_ballball, b_ballball, c_ballball, u_slide, u_roll
+    global u_sp_prop, e_ballball, e_cushion, f_cushion, shot_actual, ball1xy, ball2xy, ball3xy
 
     shot_index = shot_slider.get()
     shot_actual = shots_actual[shot_index]
@@ -282,17 +144,16 @@ def update_plot(event=None):
     e_ballball = physics_params['e_ballball'] = physics_e_ballball_slider.get()
     e_cushion = physics_params['e_cushion'] = physics_e_cushion_slider.get()
     f_cushion = physics_params['f_cushion'] = physics_f_cushion_slider.get()
-    u_ballball = physics_params['u_ballball'] = physics_u_ballball_slider.get()
 
     # Create billiard environment
-    shot_env = BilliardEnv(u_slide, u_roll, u_sp_prop, u_ballball, e_ballball, e_cushion, f_cushion)
+    shot_env = BilliardEnv(u_slide, u_roll, u_sp_prop, e_ballball, e_cushion, f_cushion)
 
     # Prepare and simulate shot with updated parameters
     shot_env.prepare_new_shot(ball_cols, ball_xy_ini, a, b, phi, v, theta)
     point, result, tsim, system = shot_env.simulate_shot(a_ballball, b_ballball, c_ballball)
 
     plot_settings()
-    plot_initial_positions(ball_xy_ini)
+    # plot_initial_positions(ball_xy_ini)
     total_loss = 0.0
     for ball_col, ball_data in shot_actual["balls"].items():
         actual_times = ball_data["t"]
@@ -303,7 +164,14 @@ def update_plot(event=None):
         
         # Plot the actual and simulated shots
         # plot_current_shot(ball_col, actual_x, actual_y, simulated_x, simulated_y)
-        plot_current_shot(ball_col, actual_x, actual_y, result[ball_col - 1][:,0], result[ball_col - 1][:,1])
+        
+        colind = ball_col - 1
+        print("update_plot:  Colind: ", colind)
+        plot_current_shot(colind, actual_x, actual_y, result[colind][:,0], result[colind][:,1])
+        
+    print(" ")
+        
+
 
     plt.gca().set_title(f"ShotID: {shot_actual['shotID']}, Loss: {total_loss:.2f}\n"
                     f"a: {round(a, 2)}\n"
