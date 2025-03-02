@@ -8,7 +8,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from pooltool.ruleset.three_cushion import is_point
 from billiardenv import BilliardEnv
 from helper_funcs import read_shotfile, interpolate_simulated_to_actual, loss_func, save_parameters, load_parameters
-from slider_definitions import create_ballball_sliders, create_physics_sliders
+from slider_definitions import create_ballball_sliders, create_physics_sliders, create_shot_sliders
 
 
 def plot_settings():
@@ -161,17 +161,10 @@ shot_param = {
     'theta': 0.0
 }
 
-# Set up shot
-num_shots = 1  # Change this value to use a different number of shots
-
-# Initialize figure dictionary
-fig = {}
-
 # Select the current shot
 shot_actual = shots_actual[0]
 
 fig = plt.figure(figsize=(7.1, 14.2))  # Set the figure size to maintain a 1:2 aspect ratio
-
 
 # GUI setup
 root = Tk()
@@ -194,35 +187,16 @@ slider_frame.pack(side="right", fill="both", expand=True)
 slider_length = 400  # Increase the length of the sliders
 slider_height = 30  # Increase the height of the sliders by a factor of 1.2
 
-# Shot selection slider
+# Shot selector slider
 shot_slider = Scale(slider_frame, from_=0, to=len(shots_actual) - 1, orient=HORIZONTAL, label="Shot", length=slider_length, command=update_plot)
 shot_slider.set(0)
 shot_slider.pack()
 
-shot_a_slider = Scale(slider_frame, from_=-0.6, to=0.6, resolution=0.001, orient=HORIZONTAL, label="Shot a", length=slider_length, command=update_plot)
-shot_a_slider.set(shot_param['a'])
-shot_a_slider.pack()
+# Shot Shot Parameters slider
+shot_a_slider, shot_b_slider, shot_phi_slider, shot_v_slider, shot_theta_slider = create_shot_sliders(slider_frame, shot_param, update_plot)
 
-shot_b_slider = Scale(slider_frame, from_=-0.6, to=0.6, resolution=0.001, orient=HORIZONTAL, label="Shot b", length=slider_length, command=update_plot)
-shot_b_slider.set(shot_param['b'])
-shot_b_slider.pack()
-
-shot_phi_slider = Scale(slider_frame, from_=-180, to=180, resolution=0.01, orient=HORIZONTAL, label="Shot phi", length=slider_length, command=update_plot)
-shot_phi_slider.set(shot_param['phi'])
-shot_phi_slider.pack()
-
-shot_v_slider = Scale(slider_frame, from_=0, to=10, resolution=0.01, orient=HORIZONTAL, label="Shot v", length=slider_length, command=update_plot)
-shot_v_slider.set(shot_param['v'])
-shot_v_slider.pack()
-
-shot_theta_slider = Scale(slider_frame, from_=0, to=90, resolution=0.01, orient=HORIZONTAL, label="Shot theta", length=slider_length, command=update_plot)
-shot_theta_slider.set(shot_param['theta'])
-shot_theta_slider.pack()
-
-# Ball-ball parameter sliders
 ballball_a_slider, ballball_b_slider, ballball_c_slider = create_ballball_sliders(slider_frame, ballball_hit_params, update_plot)
 
-# Physics parameter sliders
 physics_u_slide_slider, physics_u_roll_slider, physics_u_sp_prop_slider, physics_e_ballball_slider, physics_e_cushion_slider, physics_f_cushion_slider = create_physics_sliders(slider_frame, physics_params, update_plot)
 
 # Add a button to show the system
