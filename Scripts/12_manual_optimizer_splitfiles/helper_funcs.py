@@ -35,6 +35,17 @@ def save_parameters(ballball_hit_params, physics_params):
             pickle.dump(params, f)
         print(f"Parameters saved to {file_path}")
 
+# Function to save parameters
+def save_system(update_plot):
+    system = update_plot()
+    
+    filename = "system_" + time.strftime("%Y%m%d_%H%M%S") + ".pkl"
+    file_path = filedialog.asksaveasfilename(initialfile=filename ,defaultextension='.pkl', filetypes=[('Pickle files', '*.pkl')])
+    if file_path:
+        with open(file_path, 'wb') as f:
+            pickle.dump(system, f)
+        print(f"System saved to {file_path}")
+
 def load_parameters(slider_frame, update_plot, ballball_a_slider, ballball_b_slider, ballball_c_slider, physics_u_slide_slider, physics_u_roll_slider, physics_u_sp_prop_slider, physics_e_ballball_slider, physics_e_cushion_slider, physics_f_cushion_slider):
     file_path = filedialog.askopenfilename(filetypes=[("Pickle files", "*.pkl")])
     if file_path:

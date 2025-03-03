@@ -7,7 +7,7 @@ from tkinter import Tk, Scale, HORIZONTAL, Label, Button, Frame, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from pooltool.ruleset.three_cushion import is_point
 from billiardenv import BilliardEnv
-from helper_funcs import read_shotfile, interpolate_simulated_to_actual, loss_func, save_parameters, load_parameters
+from helper_funcs import read_shotfile, interpolate_simulated_to_actual, loss_func, save_parameters, load_parameters, save_system
 from slider_definitions import create_ballball_sliders, create_physics_sliders, create_shot_sliders
 
 
@@ -62,7 +62,7 @@ def plot_current_shot(colind, actual_x, actual_y, simulated_x, simulated_y):
     circle = plt.Circle((simulated_x[0], simulated_y[0]), 0.0615 / 2, color=colname, fill=True)
     plt.gca().add_patch(circle)
     plt.plot(actual_x, actual_y, "--", color=colname, linewidth=1)
-    plt.plot(simulated_x, simulated_y, "-", color=colname, linewidth=3)
+    plt.plot(simulated_x, simulated_y, "-", color=colname, linewidth=1)
 
 def update_plot(event=None):
     global cueball_id, a, b, phi, v, theta, a_ballball, b_ballball, c_ballball, u_slide, u_roll
@@ -210,5 +210,9 @@ save_button.pack()
 # Add a button to load the parameters
 load_button = Button(slider_frame, text="Load Parameters", command=lambda: load_parameters(slider_frame, update_plot, ballball_a_slider, ballball_b_slider, ballball_c_slider, physics_u_slide_slider, physics_u_roll_slider, physics_u_sp_prop_slider, physics_e_ballball_slider, physics_e_cushion_slider, physics_f_cushion_slider))
 load_button.pack()
+
+# Add a button to save the system
+save_system_button = Button(slider_frame, text="Save System", command=lambda: save_system(update_plot))
+save_system_button.pack()
 
 root.mainloop()
