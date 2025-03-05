@@ -22,21 +22,18 @@ from pooltool.physics.resolve.models import BallCCushionModel, BallLCushionModel
 # Type variable for cushion segments.
 Cushion = TypeVar("Cushion", LinearCushionSegment, CircularCushionSegment)
 
-# Fixed values for cushion contact point angles (assumes ball on table & fixed cushion height)
-sin_theta = 2 / 5
-cos_theta = math.sqrt(21) / 5
-
-
 class Mathavan:
     """
     A simulation model for ball-cushion collisions based on the Mathavan model.
     This class implements the dynamics as described in your TypeScript code.
     """
 
-    def __init__(self, M, R, ee, mu_s, mu_w):
+    def __init__(self, M, R, h, ee, mu_s, mu_w):
         # Physical constants
         self.M = M
         self.R = R
+        self.sin_theta = np.sin(np.atan(h/R))
+        self.cos_theta = np.cos(np.atan(h/R))
         self.ee = ee
         self.mu_s = mu_s
         self.mu_w = mu_w
@@ -69,8 +66,8 @@ class Mathavan:
         R = self.R
 
         # Velocities at the cushion (I)
-        v_xI = self.vx + self.omega_y * R * sin_theta - self.omega_z * R * cos_theta
-        v_yI = -self.vy * sin_theta + self.omega_x * R
+        v_xI = self.vx + self.omega_y * R * self.sin_theta - self.omega_z * R * self.cos_theta
+        v_yI = -self.vy * self.sin_theta + self.omega_x * R
 
         # Velocities at the table (C)
         v_xC = self.vx - self.omega_y * R
@@ -103,7 +100,7 @@ class Mathavan:
                 mu_w * math.cos(self.slip_angle)
                 + mu_s
                 * math.cos(self.slip_angle_prime)
-                * (sin_theta + mu_w * math.sin(self.slip_angle) * cos_theta)
+                * (self.sin_theta + mu_w * math.sin(self.slip_angle) * self.cos_theta)
             )
             * delta_P
         )
@@ -112,11 +109,11 @@ class Mathavan:
         self.vy -= (
             (1 / M)
             * (
-                cos_theta
-                - mu_w * sin_theta * math.sin(self.slip_angle)
+                self.cos_theta
+                - mu_w * self.sin_theta * math.sin(self.slip_angle)
                 + mu_s
                 * math.sin(self.slip_angle_prime)
-                * (sin_theta + mu_w * math.sin(self.slip_angle) * cos_theta)
+                * (self.sin_theta + mu_w * math.sin(self.slip_angle) * self.cos_theta)
             )
             * delta_P
         )
@@ -137,7 +134,7 @@ class Mathavan:
                 mu_w * math.sin(self.slip_angle)
                 + mu_s
                 * math.sin(self.slip_angle_prime)
-                * (sin_theta + mu_w * math.sin(self.slip_angle) * cos_theta)
+                * (self.sin_theta + mu_w * math.sin(self.slip_angle) * self.cos_theta)
             )
             * delta_P
         )
@@ -145,16 +142,16 @@ class Mathavan:
         self.omega_y += (
             -factor
             * (
-                mu_w * math.cos(self.slip_angle) * sin_theta
+                mu_w * math.cos(self.slip_angle) * self.sin_theta
                 - mu_s
                 * math.cos(self.slip_angle_prime)
-                * (sin_theta + mu_w * math.sin(self.slip_angle) * cos_theta)
+                * (self.sin_theta + mu_w * math.sin(self.slip_angle) * self.cos_theta)
             )
             * delta_P
         )
 
         self.omega_z += (
-            factor * (mu_w * math.cos(self.slip_angle) * cos_theta) * delta_P
+            factor * (mu_w * math.cos(self.slip_angle) * self.cos_theta) * delta_P
         )
 
     def _update_work_done(self, delta_P):
@@ -239,6 +236,7 @@ def _solve_mathaven(ball: Ball, cushion: Cushion) -> Tuple[Ball, Cushion]:
     R = ball.params.R
     ee = ball.params.e_c  # cushion restitution coefficient
     mu = ball.params.f_c  # friction coefficient for both sliding modes
+    h = cushion.p1[2]  # cushion height
 
     # Extract the ball state (assumed to be a NumPy array with rows:
     #  0: position, 1: translational velocity, 2: rotational velocity)
@@ -266,7 +264,7 @@ def _solve_mathaven(ball: Ball, cushion: Cushion) -> Tuple[Ball, Cushion]:
     omega_z_rot = rvw_R[2, 2]
 
     # Run the Mathavan simulation in the cushion frame.
-    sim = Mathavan(M, R, ee, ball.params.u_s, mu)
+    sim = Mathavan(M, R, h, ee, ball.params.u_s, mu)
     sim.solve(vx_rot, vy_rot, omega_x_rot, omega_y_rot, omega_z_rot)
 
     # Update the rotated state with the simulation's output.

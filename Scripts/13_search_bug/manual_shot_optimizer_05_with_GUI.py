@@ -241,3 +241,4 @@ for runi in range(1,10000):
         print(f"run: {runi} total outside the table: {counter_ball_outside}, times a ball jumped: {counter_ball_jumped}")
     # plot_settings()
     # plot_current_shot(tsim, white_rwv, yellow_rwv, red_rwv)
+    print(f"run: {runi} total outside the table: {counter_ball_outside}, times a ball jumped: {counter_ball_jumped}")
