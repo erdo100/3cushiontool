@@ -121,7 +121,7 @@ class BilliardEnv:
 
     def get_ball_routes(self):
         shot = self.system
-        shotcont = pt.continuize(shot, dt=0.01, inplace=False)
+        shotcont = pt.continuize(shot, dt=0.0025, inplace=False)
         white = shotcont.balls["white"]
         white_history = white.history_cts
         white_rvw, s_cue, tsim = white_history.vectorize()
@@ -132,13 +132,7 @@ class BilliardEnv:
         red_history = red.history_cts
         red_rvw, s_cue, tsim = red_history.vectorize()
 
-        # We can grab the xy-coordinates for each ball from the `rvw` array by with the following.
-        results = {}
-        results[0] = white_rvw[:, 0, :2]
-        results[1] = yellow_rvw[:, 0, :2]
-        results[2] = red_rvw[:, 0, :2]
-
-        return results, tsim
+        return tsim, white_rvw, yellow_rvw, red_rvw
 
     def simulate_shot(self, a, b, c):
         # run the physics model
@@ -154,14 +148,10 @@ class BilliardEnv:
         engine.resolver.ball_ball.friction.b = b
         engine.resolver.ball_ball.friction.c = c
     
-        pt.serialize.conversion.unstructure_to(engine, "engine.yaml")
-        print("engine saved to engine.yaml")
+        # pt.serialize.conversion.unstructure_to(engine, "engine.yaml")
+        # print("engine saved to engine.yaml")
 
         # Pass the engine to your simulate call.
         pt.simulate(self.system, engine=engine, inplace=True)
 
-        results, tsim = self.get_ball_routes()
-        if is_point(self.system):
-            point = 1
-
-        return point, results, tsim, self.system
+        return self.system
