@@ -125,13 +125,13 @@ class BilliardTableSpecs:
         - See :class:`SnookerTableSpecs` for pocket table specs.
     """
 
-    # 10-foot table (imprecise)
-    l: float = field(default=3.05)  # noqa  E741
-    w: float = field(default=3.05 / 2)
+    # match table size
+    l: float = field(default=2.84)
+    w: float = field(default=1.42)
 
     # FIXME height should be adjusted for 3-cushion sized balls
     cushion_width: float = field(default=2 * 2.54 / 100)
-    cushion_height: float = field(default=0.64 * 2 * 0.028575)
+    cushion_height: float = field(default=0.37)
 
     # For visualization
     height: float = field(default=0.708)
