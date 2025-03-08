@@ -143,7 +143,7 @@ class BilliardEnv:
         point = 0
 
         engine = pt.physics.PhysicsEngine()  # start with default
-        engine.resolver.stick_ball.squirt_throttle = 0.0
+        engine.resolver.stick_ball.squirt_throttle = 1.0
         engine.resolver.ball_linear_cushion = pt.physics.ball_lcushion_models[
             pt.physics.BallLCushionModel.MATHAVAN_2010
         ]() # HAN_2005 and MATHAVAN_2010

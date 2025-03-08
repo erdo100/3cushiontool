@@ -3,7 +3,7 @@ import time
 import numpy as np
 from scipy.interpolate import interp1d
 from tkinter import filedialog
-from slider_definitions import create_ballball_sliders, create_physics_sliders
+from slider_definitions import create_sliders
   
 def read_shotfile():
 
@@ -23,17 +23,29 @@ def read_shotfile():
     return shots_actual
 
 # Function to save parameters
-def save_parameters(ballball_hit_params, physics_params):
-    params = {
-        'ballball_hit_params': ballball_hit_params,
-        'physics_params': physics_params
-    }
+def save_parameters(params):
     filename = "parameters_" + time.strftime("%Y%m%d_%H%M%S") + ".pkl"
-    file_path = filedialog.asksaveasfilename(initialfile=filename ,defaultextension='.pkl', filetypes=[('Pickle files', '*.pkl')])
+    file_path = filedialog.asksaveasfilename(initialfile=filename, defaultextension='.pkl', filetypes=[('Pickle files', '*.pkl')])
     if file_path:
         with open(file_path, 'wb') as f:
             pickle.dump(params, f)
         print(f"Parameters saved to {file_path}")
+        print(params)
+
+def load_parameters(slider_frame, update_plot, **sliders):
+    file_path = filedialog.askopenfilename(filetypes=[("Pickle files", "*.pkl")])
+    if file_path:
+        with open(file_path, 'rb') as f:
+            params = pickle.load(f)
+            print(params)
+            print(f"Parameters loaded from {file_path}:")
+        for key, slider in sliders.items():
+            print(f"{key}: {params[key]}")
+            if key in params:
+                print(f"Setting {key} to {params[key]}")
+                slider.set(params[key])
+
+        update_plot()   
 
 # Function to save parameters
 def save_system(update_plot):
@@ -48,27 +60,45 @@ def save_system(update_plot):
         print(f"System saved to {file_path}")
         system.save("Ball_dislocation_bug.msgpack")
 
-def load_parameters(slider_frame, update_plot, ballball_a_slider, ballball_b_slider, ballball_c_slider, physics_u_slide_slider, physics_u_roll_slider, physics_u_sp_prop_slider, physics_e_ballball_slider, physics_e_cushion_slider, physics_f_cushion_slider, physics_cushion_height):
-    file_path = filedialog.askopenfilename(filetypes=[("Pickle files", "*.pkl")])
-    if file_path:
-        with open(file_path, 'rb') as f:
-            params = pickle.load(f)
+def initial_shot_direction(x, y):
+    dx = np.diff(x)
+    dy = np.diff(y)
+    phi = np.arctan2(dy, dx)
+    phi = np.degrees(phi)
 
-        ballball_hit_params = params['ballball_hit_params']
-        physics_params = params['physics_params']
+    return phi[3]
 
-        ballball_a_slider.set(ballball_hit_params['a'])
-        ballball_b_slider.set(ballball_hit_params['b'])
-        ballball_c_slider.set(ballball_hit_params['c'])
-        physics_u_slide_slider.set(physics_params['u_slide'])
-        physics_u_roll_slider.set(physics_params['u_roll'])
-        physics_u_sp_prop_slider.set(physics_params['u_sp_prop'])
-        physics_e_ballball_slider.set(physics_params['e_ballball'])
-        physics_e_cushion_slider.set(physics_params['e_cushion'])
-        physics_f_cushion_slider.set(physics_params['f_cushion'])
-        physics_cushion_height.set(physics_params['h_cushion'])
+def get_ball_ids(shot_actual):
+    color_mapping = {1: "white", 2: "yellow", 3: "red"}
 
-        update_plot()   
+    ball_ids = {}
+    ball_cols = {}
+    # Get the second entry (based on insertion order)
+    ball_ids[0] = list(shot_actual["balls"].keys())[0] # This is the cue ball
+    ball_cols[0] = color_mapping.get(ball_ids[0])  # Assign color
+    ball_ids[1] = list(shot_actual["balls"].keys())[1]
+    ball_cols[1] = color_mapping.get(ball_ids[1])  # Assign color
+    ball_ids[2] = list(shot_actual["balls"].keys())[2]
+    ball_cols[2] = color_mapping.get(ball_ids[2])  # Assign color
+    
+    return ball_ids, ball_cols
+
+def get_ball_positions(shot_actual):
+
+    ball_ids, ball_cols = get_ball_ids(shot_actual)
+
+    balls_xy_ini = {}
+    balls_xy_ini[0] = (shot_actual["balls"][1]["x"][0], shot_actual["balls"][1]["y"][0])
+    balls_xy_ini[1] = (shot_actual["balls"][2]["x"][0], shot_actual["balls"][2]["y"][0])
+    balls_xy_ini[2] = (shot_actual["balls"][3]["x"][0], shot_actual["balls"][3]["y"][0])
+
+    # Calculate initial shot direction
+    cueball_x = shot_actual["balls"][ball_ids[0]]["x"]
+    cueball_y = shot_actual["balls"][ball_ids[0]]["y"]
+    cueball_phi = initial_shot_direction(cueball_x, cueball_y)
+
+    return balls_xy_ini, ball_ids, ball_cols, cueball_phi
+
 
 def loss_func(actual_x, actual_y, simulated_x, simulated_y):
     distances = np.sqrt((actual_x - simulated_x) ** 2 + (actual_y - simulated_y) ** 2)
