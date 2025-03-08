@@ -5,12 +5,12 @@
     "configurations": [
         {
             "name": "Debug: Current File",
-            "type": "debugpy",
+            "type": "python",
             "request": "launch",
             "program": "${file}",
             "console": "internalConsole",
             "cwd": "${fileDirname}",
-            "python": "/opt/anaconda3/envs/pooltool-dev/bin/python3.12",
+            "python": "python"
         }
     ]
 }

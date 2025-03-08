@@ -4,26 +4,25 @@ import numpy as np
 from scipy.interpolate import interp1d
 import pooltool as pt
 from tkinter import Tk, Scale, HORIZONTAL, Label, Button, Frame, filedialog
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from pooltool.ruleset.three_cushion import is_point
 from billiardenv import BilliardEnv
-from helper_funcs import read_shotfile, interpolate_simulated_to_actual, loss_func, save_parameters, load_parameters, save_system
+from helper_funcs import read_shotfile, interpolate_simulated_to_actual, loss_func, save_parameters, load_parameters, save_system, calculate_velocity
 from slider_definitions import create_ballball_sliders, create_physics_sliders, create_shot_sliders
 
 
-def plot_settings():
-    plt.clf()  # Clear the current figure
-    plt.ion()  # Enable interactive mode
-    plt.xlabel("X Position (mm)")
-    plt.ylabel("Y Position (mm)")
-    plt.xlim(0.0-0.2, 1.42+0.2)
-    plt.ylim(0.0-0.2, 2.84+0.2)
-    plt.gca().set_aspect("equal", adjustable="box")  # Set the aspect ratio to 1:2
-    plt.gca().set_facecolor("lightgray")  # Set the background color to light gray
+def plot_settings(ax):
+    ax.cla()  # Clear the current axis
+    ax.set_xlabel("X Position (mm)")
+    ax.set_ylabel("Y Position (mm)")
+    ax.set_xlim(0.0-0.2, 1.42+0.2)
+    ax.set_ylim(0.0-0.2, 2.84+0.2)
+    ax.set_aspect("equal", adjustable="box")  # Set the aspect ratio to 1:2
+    ax.set_facecolor("lightgray")  # Set the background color to light gray
     grid_size = 2.84 / 8
-    plt.xticks(np.arange(0, 1.42 + grid_size, grid_size))
-    plt.yticks(np.arange(0, 2.84 + grid_size, grid_size))
-    plt.grid(True)
+    ax.set_xticks(np.arange(0, 1.42 + grid_size, grid_size))
+    ax.set_yticks(np.arange(0, 2.84 + grid_size, grid_size))
+    ax.grid(True)
 
 def get_ball_ids(shot_actual):
     color_mapping = {1: "white", 2: "yellow", 3: "red"}
@@ -42,12 +41,6 @@ def get_ball_ids(shot_actual):
 
 def get_ball_positions(shot_actual):
 
-    # ball_ids[0] = cue ball
-    # ball_ids[1] = b2 ball
-    # ball_ids[2] = b3 ball
-    # ball_cols[0] = cue ball color
-    # ball_cols[1] = b2 ball color
-    # ball_cols[2] = b3 ball color 
     ball_ids, ball_cols = get_ball_ids(shot_actual)
 
     balls_xy_ini = {}
@@ -57,27 +50,28 @@ def get_ball_positions(shot_actual):
 
     return balls_xy_ini, ball_ids, ball_cols
 
-def plot_initial_positions(ball_xy_ini):
+def plot_initial_positions(ax, ball_xy_ini):
     for ball_col, ball_xy in ball_xy_ini.items():
         circle = plt.Circle(ball_xy, 0.0615 / 2, color=ball_col, fill=True)
-        plt.gca().add_patch(circle)
+        ax.add_patch(circle)
 
-def plot_current_shot(colind, actual_x, actual_y, simulated_x, simulated_y):
+def plot_current_shot(ax, colind, actual_x, actual_y, simulated_x, simulated_y):
     color_mapping = {1: "white", 2: "yellow", 3: "red"}
     colname = color_mapping[colind]
     circle = plt.Circle((simulated_x[0], simulated_y[0]), 0.0615 / 2, color=colname, fill=True)
-    plt.gca().add_patch(circle)
-    plt.plot(actual_x, actual_y, "--", color=colname, linewidth=1)
-    plt.plot(simulated_x, simulated_y, "-", color=colname, linewidth=1)
+    ax.add_patch(circle)
+    ax.plot(actual_x, actual_y, "--", color=colname, linewidth=1)
+    ax.plot(simulated_x, simulated_y, "-", color=colname, linewidth=1)
 
 def update_plot(event=None):
     global cueball_id, a, b, phi, v, theta, a_ballball, b_ballball, c_ballball, u_slide, u_roll
     global u_sp_prop, e_ballball, e_cushion, f_cushion, h_cushion, shot_actual, ball1xy, ball2xy, ball3xy
 
+    # Retrieve current shot and slider values
     shot_index = shot_slider.get()
     shot_actual = shots_actual[shot_index]
     ball_xy_ini, ball_ids, ball_cols = get_ball_positions(shot_actual)
-   
+    
     a = shot_param['a'] = shot_a_slider.get()
     b = shot_param['b'] = shot_b_slider.get()
     phi = shot_param['phi'] = shot_phi_slider.get()
@@ -97,22 +91,32 @@ def update_plot(event=None):
     h_cushion = physics_params['h_cushion'] = physics_cushion_height.get()
     print("update_plot", h_cushion)
 
-    # Create billiard environment
+    # Create billiard environment and simulate shot
     shot_env = BilliardEnv(u_slide, u_roll, u_sp_prop, e_ballball, e_cushion, f_cushion, h_cushion)
-
-    # Prepare and simulate shot with updated parameters
     shot_env.prepare_new_shot(ball_cols, ball_xy_ini, a, b, phi, v, theta)
     system = shot_env.simulate_shot(a_ballball, b_ballball, c_ballball)
-
     tsim, white_rvw, yellow_rvw, red_rvw = shot_env.get_ball_routes()
-    
 
-    plot_settings()
+    # Clear entire figure and create a new grid layout.
+    fig.clf()
+    import matplotlib.gridspec as gridspec
+    gs = gridspec.GridSpec(1, 2, width_ratios=[1, 1])
+
+    # Left side (main plot)
+    main_ax = fig.add_subplot(gs[0])
+    plot_settings(main_ax)
+    main_ax.set_xticklabels([])  # Remove x-axis tick labels
+    main_ax.set_yticklabels([])  # Remove y-axis tick labels
+    # Right side: Create three vertically arranged subplots with double width.
+    gs_right = gridspec.GridSpecFromSubplotSpec(3, 1, subplot_spec=gs[1])
+    ax_top = fig.add_subplot(gs_right[0])
+    ax_mid = fig.add_subplot(gs_right[1])
+    ax_bot = fig.add_subplot(gs_right[2])
+
+
     total_loss = 0.0
-    # loop over all balls white_rvw, yellow_rvw, red_rvw with index colind
     for ballx in [0, 1, 2]:
-         # interpolate the simations to real shots
-        
+        # Select the appropriate rvw based on ball ID
         if ball_ids[ballx] == 1:
             rvw = white_rvw
         elif ball_ids[ballx] == 2:
@@ -123,29 +127,41 @@ def update_plot(event=None):
         actual_times = shot_actual["balls"][ball_ids[ballx]]["t"]
         actual_x = shot_actual["balls"][ball_ids[ballx]]["x"]
         actual_y = shot_actual["balls"][ball_ids[ballx]]["y"]
-        actual_y = shot_actual["balls"][ball_ids[ballx]]["y"]
-        simulated_x = rvw[:, 0, 0]
-        simulated_y = rvw[:, 0, 1]
+        simulated_x = rvw[:,0,0]
+        simulated_y = rvw[:,0,1]
         interp_x = interpolate_simulated_to_actual(tsim, simulated_x, actual_times)
         interp_y = interpolate_simulated_to_actual(tsim, simulated_y, actual_times)
-        
-
         total_loss += loss_func(actual_x, actual_y, interp_x, interp_y)
         
-        # Plot the actual and simulated shots
-        # plot_initial_positions(ball_xy_ini)
-        # plot_current_shot(ball_col, actual_x, actual_y, simulated_x, simulated_y)
-        
-        plot_current_shot(ball_ids[ballx], actual_x, actual_y, simulated_x, simulated_y)
-        
-    plt.gca().set_title(f"ShotID: {shot_actual['shotID']}, Loss: {total_loss:.2f}\n"
-                    f"a: {round(a, 2)}\n"
-                    f"b: {round(b, 2)}\n"
-                    f"phi: {round(phi, 2)}\n"
-                    f"v: {round(v, 2)}\n"
-                    f"theta: {round(theta, 2)}")
-    canvas.draw()  # Update the plot
+        # Plot the shot on the main axis
+        plot_current_shot(main_ax, ball_ids[ballx], actual_x, actual_y, simulated_x, simulated_y)
 
+        actual_v = calculate_velocity(actual_x, actual_y, actual_times)
+        simulated_v = calculate_velocity(simulated_x, simulated_y, tsim)
+
+        if ball_ids[ballx] == 1:
+            ax_top.plot(actual_times, actual_v, label="actual", linestyle='--', linewidth=1)
+            ax_top.plot(tsim, simulated_v, label="simulated", linestyle='-', linewidth=1)
+            ax_top.set_title("absolute velocity")
+        elif ball_ids[ballx] == 2:
+            ax_mid.plot(actual_times, actual_v, label="actual", linestyle='--', linewidth=1)
+            ax_mid.plot(tsim, simulated_v, label="simulated", linestyle='-', linewidth=1)
+            ax_mid.set_title("absolute velocity")
+
+        elif ball_ids[ballx] == 3:
+            ax_bot.plot(actual_times, actual_v, label="actual", linestyle='--', linewidth=1)
+            ax_bot.plot(tsim, simulated_v, label="simulated", linestyle='-', linewidth=1)
+            ax_bot.set_title("absolute velocity")
+
+    main_ax.set_title(f"ShotID: {shot_actual['shotID']}, Loss: {total_loss:.2f}\n"
+                      f"a: {round(a, 2)}  b: {round(b, 2)}\n"
+                      f"phi: {round(phi, 2)}  v: {round(v, 2)}  theta: {round(theta, 2)}")
+
+    for ax in [ax_top, ax_mid, ax_bot]:
+        ax.legend(loc="best")
+        ax.grid(True)
+
+    canvas.draw()  # Update the figure display
     return system
 
 def on_closing():
@@ -191,7 +207,7 @@ shot_param = {
 # Select the current shot
 shot_actual = shots_actual[0]
 
-fig = plt.figure(figsize=(7.1, 14.2))  # Set the figure size to maintain a 1:2 aspect ratio
+fig = plt.figure(figsize=(16, 14))  # Set the figure size to maintain a 1:2 aspect ratio
 
 # GUI setup
 root = Tk()
@@ -205,6 +221,10 @@ plot_frame.pack(side="left", fill="both", expand=True)
 # Create a canvas for the plot
 canvas = FigureCanvasTkAgg(fig, master=plot_frame)
 canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+# Add the toolbar for zooming and panning
+toolbar = NavigationToolbar2Tk(canvas, plot_frame)
+toolbar.update()
 
 # Create a frame for the sliders
 slider_frame = Frame(root)

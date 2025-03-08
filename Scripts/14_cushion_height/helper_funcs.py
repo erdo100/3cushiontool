@@ -85,3 +85,13 @@ def interpolate_simulated_to_actual(simulated, tsim, actual_times):
     )
     interpolated = interp_func(actual_times)
     return interpolated
+
+# calculate absolute velocity
+def calculate_velocity(x, y, t):
+    dx = np.diff(x)
+    dy = np.diff(y)
+    dt = np.diff(t)
+    v = np.sqrt(dx ** 2 + dy ** 2) / dt
+    # add a zero to the beginning of the array to make it the same length as x and y
+    v = np.insert(v, 0, 0)
+    return v
