@@ -58,7 +58,6 @@ class Mathavan:
         self.slip_angle = 0.0
         self.slip_speed_prime = 0.0
         self.slip_angle_prime = 0.0
-        print("class mathavan: ", h, self.sin_theta, self.cos_theta)
 
     def _update_slip_speeds_and_angles(self):
         """
@@ -274,7 +273,6 @@ def _solve_mathaven(ball: Ball, cushion: Cushion) -> Tuple[Ball, Cushion]:
     rvw_R[2, 0] = sim.omega_x
     rvw_R[2, 1] = sim.omega_y
     rvw_R[2, 2] = sim.omega_z
-    print("rvw_R: ", rvw_R)
     # Rotate the state back to the table frame.
     rvw_final = ptmath.coordinate_rotation(rvw_R.T, -angle_to_rotate).T
 

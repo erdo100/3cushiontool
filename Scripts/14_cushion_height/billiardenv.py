@@ -40,16 +40,8 @@ class BilliardEnv:
         # Build a table with default BILLIARD specs
         self.table = pt.Table.default(pt.TableType.BILLIARD)
 
-        new_segments = {}
-        for key, segment in self.table.cushion_segments.linear.items():
-            new_p1 = segment.p1.copy()  # Make a copy of the array
-            new_p2 = segment.p2.copy()  # Make a copy of the array
-            new_p1[2] = h_cushion  # Modify the copy
-            new_p2[2] = h_cushion  # Modify the copy
-            new_segment = pt.Segment(p1=new_p1, p2=new_p2, direction=segment.direction)  # Create a new segment with modified p1 and p2
-            new_segments[key] = new_segment
-        self.table.cushion_segments.linear = new_segments
-
+        specs = pt.objects.BilliardTableSpecs(cushion_height=h_cushion)
+        self.table = pt.Table.from_table_specs(specs)
 
         # create the cue
         cue_specs = pt.objects.CueSpecs(

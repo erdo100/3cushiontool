@@ -16,8 +16,8 @@ def plot_settings():
     plt.ion()  # Enable interactive mode
     plt.xlabel("X Position (mm)")
     plt.ylabel("Y Position (mm)")
-    plt.xlim(0, 1.42)
-    plt.ylim(0, 2.84)
+    plt.xlim(0.0-0.2, 1.42+0.2)
+    plt.ylim(0.0-0.2, 2.84+0.2)
     plt.gca().set_aspect("equal", adjustable="box")  # Set the aspect ratio to 1:2
     plt.gca().set_facecolor("lightgray")  # Set the background color to light gray
     grid_size = 2.84 / 8

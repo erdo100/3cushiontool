@@ -4,15 +4,15 @@ from tkinter import Scale, HORIZONTAL
 
 # Shot parameter sliders
 def create_shot_sliders(slider_frame, shot_param, update_plot):
-    shot_a_slider = Scale(slider_frame, from_=-0.6, to=0.6, resolution=0.01, orient=HORIZONTAL, label="Shot a", length=400, command=update_plot)
+    shot_a_slider = Scale(slider_frame, from_=-0.6, to=0.6, resolution=0.001, orient=HORIZONTAL, label="Shot a", length=400, command=update_plot)
     shot_a_slider.set(shot_param['a'])
     shot_a_slider.pack()
 
-    shot_b_slider = Scale(slider_frame, from_=-0.6, to=0.6, resolution=0.01, orient=HORIZONTAL, label="Shot b", length=400, command=update_plot)
+    shot_b_slider = Scale(slider_frame, from_=-0.6, to=0.6, resolution=0.001, orient=HORIZONTAL, label="Shot b", length=400, command=update_plot)
     shot_b_slider.set(shot_param['b'])
     shot_b_slider.pack()
 
-    shot_phi_slider = Scale(slider_frame, from_=-180, to=180, resolution=0.1, orient=HORIZONTAL, label="Shot phi", length=400, command=update_plot)
+    shot_phi_slider = Scale(slider_frame, from_=-180, to=180, resolution=0.01, orient=HORIZONTAL, label="Shot phi", length=400, command=update_plot)
     shot_phi_slider.set(shot_param['phi'])
     shot_phi_slider.pack()
 
@@ -68,7 +68,7 @@ def create_physics_sliders(slider_frame, physics_params, update_plot):
     physics_f_cushion_slider.set(physics_params['f_cushion'])
     physics_f_cushion_slider.pack()
 
-    physics_cushion_height_slider = Scale(slider_frame, from_=0.035, to=0.038, resolution=0.0001, orient=HORIZONTAL, label="Physics h_cushion", length=400, command=update_plot)
+    physics_cushion_height_slider = Scale(slider_frame, from_=0.035, to=0.039, resolution=0.0001, orient=HORIZONTAL, label="Physics h_cushion", length=400, command=update_plot)
     physics_cushion_height_slider.set(physics_params['h_cushion'])
     physics_cushion_height_slider.pack()
 
