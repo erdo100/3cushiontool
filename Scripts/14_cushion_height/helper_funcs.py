@@ -5,9 +5,8 @@ from scipy.interpolate import interp1d
 from tkinter import filedialog
   
 def read_shotfile():
-
     # pick file woth UI
-    file_path = r"E:\PYTHON_PROJECTS\POOLTOOL\3cushiontool\Scripts\20221225_2_Match_Ersin_Cemal.pkl"
+    # file_path = r"E:\PYTHON_PROJECTS\POOLTOOL\3cushiontool\Scripts\20221225_2_Match_Ersin_Cemal.pkl"
     file_path = filedialog.askopenfilename()
 
     # Load shots from the pickle file
@@ -23,7 +22,7 @@ def read_shotfile():
 
 # Function to save parameters
 def save_parameters(params):
-    filename = "parameters_" + time.strftime("%Y%m%d_%H%M%S") + ".pkl"
+    filename = "Shot_" + str(params.value["shot_id"]) + "_parameters_" + time.strftime("%Y%m%d_%H%M%S") + ".pkl"
     file_path = filedialog.asksaveasfilename(initialfile=filename, defaultextension='.pkl', filetypes=[('Pickle files', '*.pkl')])
     if file_path:
         with open(file_path, 'wb') as f:

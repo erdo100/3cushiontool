@@ -76,7 +76,7 @@ class plot_3cushion():
         show_button.pack()
 
         # Add a button to save the parameters
-        save_button = Button(slider_frame, text="Save Parameters", command=lambda: save_parameters(params))
+        save_button = Button(slider_frame, text="Save Parameters", command=lambda: save_parameters(self.params))
         save_button.pack()
 
         # Add a button to load the parameters
@@ -198,7 +198,7 @@ class plot_3cushion():
         shot_phi_slider.set(params.value['shot_phi'])
         shot_phi_slider.pack()
 
-        sliders['shot_v'] = shot_v_slider = Scale(slider_frame, from_=0, to=10, resolution=0.1, orient=HORIZONTAL, label="Shot v", length=slider_length, command=update_plot)
+        sliders['shot_v'] = shot_v_slider = Scale(slider_frame, from_=0, to=10, resolution=0.01, orient=HORIZONTAL, label="Shot v", length=slider_length, command=update_plot)
         shot_v_slider.set(params.value['shot_v'])
         shot_v_slider.pack()
 
@@ -297,19 +297,19 @@ class plot_3cushion():
         ball_xy_ini, ball_ids, ball_cols, cue_phi = get_ball_positions(shot_actual)
 
         # update the actual parameters
-        a = params.value['a'] = sliders['shot_a'].get()
-        b = params.value['b'] = sliders['shot_b'].get()
+        a = params.value['shot_a'] = sliders['shot_a'].get()
+        b = params.value['shot_b'] = sliders['shot_b'].get()
 
         if self.shot_id_changed:
-            phi = params.value['phi'] = cue_phi
+            phi = params.value['shot_phi'] = cue_phi
             sliders['shot_phi'].set(cue_phi)
             self.shot_id_changed = False
         else:
-            phi = params.value['phi'] = sliders['shot_phi'].get()
+            phi = params.value['shot_phi'] = sliders['shot_phi'].get()
             self.shot_id_changed = False
 
-        v = params.value['v'] = sliders['shot_v'].get()
-        theta = params.value['theta'] = sliders['shot_theta'].get()
+        v = params.value['shot_v'] = sliders['shot_v'].get()
+        theta = params.value['shot_theta'] = sliders['shot_theta'].get()
 
         a_ballball = params.value['ballball_a'] = sliders['ballball_a'].get()
         b_ballball = params.value['ballball_b'] = sliders['ballball_b'].get()
