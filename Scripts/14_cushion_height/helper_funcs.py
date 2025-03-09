@@ -3,7 +3,6 @@ import time
 import numpy as np
 from scipy.interpolate import interp1d
 from tkinter import filedialog
-from slider_definitions import create_sliders
   
 def read_shotfile():
 
