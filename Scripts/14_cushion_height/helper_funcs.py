@@ -39,10 +39,10 @@ def load_parameters(slider_frame, update_plot, **sliders):
             print(params)
             print(f"Parameters loaded from {file_path}:")
         for key, slider in sliders.items():
-            print(f"{key}: {params[key]}")
-            if key in params:
-                print(f"Setting {key} to {params[key]}")
-                slider.set(params[key])
+            print(f"{key}: {params.value[key]}")
+            if key in params.value:
+                print(f"Setting {key} to {params.value[key]}")
+                slider.set(params.value[key])
 
         update_plot()   
 

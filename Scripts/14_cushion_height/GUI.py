@@ -80,7 +80,7 @@ class plot_3cushion():
         save_button.pack()
 
         # Add a button to load the parameters
-        load_button = Button(slider_frame, text="Load Parameters", command=lambda: load_parameters(slider_frame, self.update_plot, **sliders))
+        load_button = Button(slider_frame, text="Load Parameters", command=lambda: load_parameters(slider_frame, self.update_plot, **self.sliders))
         load_button.pack()
 
         # Add a button to save the system
