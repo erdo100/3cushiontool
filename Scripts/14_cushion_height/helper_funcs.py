@@ -116,7 +116,7 @@ def interpolate_simulated_to_actual(simulated, tsim, actual_times):
     return interpolated
 
 # calculate absolute velocity
-def calculate_velocity(x, y, t):
+def abs_velocity(t, x, y):
     dx = np.diff(x)
     dy = np.diff(y)
     dt = np.diff(t)
