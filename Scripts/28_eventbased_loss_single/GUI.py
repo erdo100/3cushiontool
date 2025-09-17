@@ -837,7 +837,7 @@ class plot_3cushion():
             h["spin_side"][i][0].set_data(tsim, side_spin)
             
             self.root.ax[i+1].set_xlim((0, tmax))
-            self.root.ax[i+1].set_ylim((0, vmax))            # Set spin plot limits
+            self.root.ax[i+1].set_ylim((0, vmax+0.1))            # Set spin plot limits
             spin_values = np.concatenate([roll_spin, top_spin, side_spin])
             if len(spin_values) > 0:
                 spin_max = max(abs(np.min(spin_values)), abs(np.max(spin_values)))
